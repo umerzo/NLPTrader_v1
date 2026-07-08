@@ -1,0 +1,11 @@
+# Secrets — NEVER commit these
+.env
+.streamlit/secrets.toml
+
+# Python junk
+venv/
+__pycache__/
+*.pyc
+
+# NOTE: nlptrader.db is intentionally NOT ignored — we ship the data snapshot so the
+# deployed (display-only) app has something to show. It contains no secrets.

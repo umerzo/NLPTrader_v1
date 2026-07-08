@@ -1,0 +1,9 @@
+# DEPLOYMENT requirements (Streamlit Community Cloud reads THIS file).
+# Slim on purpose: the hosted app only DISPLAYS the data snapshot, so it does NOT need
+# torch / transformers / openai. That keeps the free-tier build fast and within memory.
+streamlit>=1.36
+pandas>=2.0
+python-dotenv>=1.0
+
+# To RUN THE PIPELINE LOCALLY (fetch + FinBERT + LLM) you also need the heavier tools:
+#   pip install -r requirements-pipeline.txt
