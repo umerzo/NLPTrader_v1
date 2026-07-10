@@ -60,6 +60,7 @@ def fetch_for_ticker(ticker):
                 "summary": item.get("summary"),
                 "source": item.get("source"),
                 "url": item.get("url"),
+                "image": item.get("image"),
                 "published_at": _unix_to_iso(item.get("datetime", 0)),
                 "fetched_at": now_iso,
             }
@@ -97,6 +98,7 @@ def tag_category_news(raw, symbols):
                 "summary": item.get("summary"),
                 "source": item.get("source"),
                 "url": item.get("url"),
+                "image": item.get("image"),
                 "published_at": _unix_to_iso(item.get("datetime", 0)),
                 "fetched_at": now_iso,
             }

@@ -1,9 +1,11 @@
-# DEPLOYMENT requirements (Streamlit Community Cloud reads THIS file).
-# Slim on purpose: the hosted app only DISPLAYS the data snapshot, so it does NOT need
-# torch / transformers / openai. That keeps the free-tier build fast and within memory.
-streamlit>=1.36
-pandas>=2.0
+# Full NLPTrader requirements
+fastapi>=0.110
+uvicorn>=0.29
+requests>=2.31
 python-dotenv>=1.0
+feedparser>=6.0
+openai>=1.30
 
-# To RUN THE PIPELINE LOCALLY (fetch + FinBERT + LLM) you also need the heavier tools:
-#   pip install -r requirements-pipeline.txt
+# For FinBERT (local pipeline):
+#   pip install transformers torch
+# The pipeline scripts check for torch before running.

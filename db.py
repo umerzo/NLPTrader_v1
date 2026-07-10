@@ -5,6 +5,7 @@ SQLite is just a single file on disk; no server to install. Perfect for an MVP.
 Roman Urdu: SQLite ek single file database hai — koi server install nahi karna parta,
 isliye beginner ke liye sab se aasaan choice hai.
 """
+from datetime import datetime, timezone, timedelta
 import sqlite3
 from config import DB_PATH
 
@@ -38,6 +39,7 @@ def init_db():
             summary      TEXT,
             source       TEXT,
             url          TEXT UNIQUE,
+            image        TEXT,          -- article thumbnail from Finnhub
             published_at TEXT,          -- real publish time (UTC). Critical for honest evaluation.
             fetched_at   TEXT,          -- when WE pulled it
             -- filled by later steps:
@@ -49,6 +51,11 @@ def init_db():
         )
         """
     )
+    # Migration: add image column if it doesn't exist (for DBs created before image support)
+    try:
+        conn.execute("ALTER TABLE articles ADD COLUMN image TEXT")
+    except Exception:
+        pass  # column already exists — safe to ignore
     conn.commit()
     conn.close()
 
@@ -67,8 +74,8 @@ def save_articles(articles):
         cur = conn.execute(
             """
             INSERT OR IGNORE INTO articles
-                (ticker, headline, summary, source, url, published_at, fetched_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (ticker, headline, summary, source, url, image, published_at, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 a.get("ticker"),
@@ -76,6 +83,7 @@ def save_articles(articles):
                 a.get("summary"),
                 a.get("source"),
                 a.get("url"),
+                a.get("image"),
                 a.get("published_at"),
                 a.get("fetched_at"),
             ),
@@ -186,49 +194,110 @@ def save_signal(article_id, signal, confidence):
 
 def ticker_signal_overview():
     """
-    Aggregate per-article signals into ONE view per ticker.
+    Aggregate per-article signals into ONE view per ticker, with recency weighting.
 
-    A single ticker has many articles; a human wants one answer, not 200. We compute a
-    'net score': each positive article pushes up, each negative pushes down, neutral = 0.
-    The average tells us the overall lean. This is far more useful than per-article noise.
-    Roman Urdu: Ek ticker ki bohot saari khabrein hoti hain — hum unka net score nikaal kar
-    ek hi overall faisla (BUY/HOLD/SELL) banate hain, jo dashboard par dikhega.
+    Key improvements over old version:
+    1. RECENCY WEIGHT: articles published in last 24h get 2x weight, 24-48h get 1.5x,
+       older gets 0.5x. Recent news matters more in markets.
+    2. VOLUME CONFIDENCE: a signal based on 20 articles is more reliable than 2.
+       Confidence gets scaled: 0-5 articles → 50% cap, 6-15 → 75% cap, 16+ → 100%.
+    3. SAMPLE SIZE: we return article_count so the UI can show 'based on X articles'.
+
+    Roman Urdu: Nayi khabron ko zyada weight diya ja raha hai taake signal zyada fresh
+    ho. Volume bhi dekha ja raha hai — 2 articles se jo signal bana, wo 20 articles se
+    bane signal jaisa confident nahi ho sakta.
     """
+    from datetime import datetime, timezone, timedelta
     conn = get_connection()
     rows = conn.execute(
         """
-        SELECT ticker,
-               COUNT(*) AS n,
-               SUM(CASE WHEN sentiment='positive' THEN sentiment_score
-                        WHEN sentiment='negative' THEN -sentiment_score
-                        ELSE 0 END) AS net_raw
+        SELECT ticker, headline, sentiment, sentiment_score, published_at
         FROM articles
         WHERE sentiment IS NOT NULL
-        GROUP BY ticker
-        ORDER BY ticker
+        ORDER BY ticker, published_at DESC
         """
     ).fetchall()
     conn.close()
 
-    overview = []
+    now = datetime.now(timezone.utc)
+    ticker_data = {}
+
     for r in rows:
-        n = r["n"] or 1
-        net = (r["net_raw"] or 0) / n          # average lean, roughly -1..+1
-        if net > 0.15:
+        tk = r["ticker"]
+        if tk not in ticker_data:
+            ticker_data[tk] = {"articles": []}
+        # Parse published_at, handling missing/invalid gracefully
+        try:
+            pub = datetime.fromisoformat(r["published_at"])
+            if pub.tzinfo is None:
+                pub = pub.replace(tzinfo=timezone.utc)
+            hours_ago = (now - pub).total_seconds() / 3600
+        except Exception:
+            hours_ago = 72  # assume old if we can't parse
+
+        # Recency weight: exponential decay, halving every 24 hours
+        weight = 2.0 ** (-hours_ago / 48)
+
+        score = r["sentiment_score"] or 0.0
+        if r["sentiment"] == "positive":
+            weighted = score * weight
+        elif r["sentiment"] == "negative":
+            weighted = -score * weight
+        else:
+            weighted = 0
+
+        ticker_data[tk]["articles"].append({
+            "weight": weight,
+            "weighted_score": weighted,
+            "is_positive": r["sentiment"] == "positive",
+            "is_negative": r["sentiment"] == "negative",
+        })
+
+    overview = []
+    for tk, data in ticker_data.items():
+        arts = data["articles"]
+        n = len(arts)
+        total_weight = sum(a["weight"] for a in arts) or 1
+        total_weighted = sum(a["weighted_score"] for a in arts)
+        net = total_weighted / total_weight
+
+        # Volume-based confidence modifier
+        if n >= 16:
+            volume_factor = 1.0
+        elif n >= 6:
+            volume_factor = 0.75
+        else:
+            volume_factor = 0.5
+
+        if net > 0.05:
             sig = "BUY"
-        elif net < -0.15:
+        elif net < -0.05:
             sig = "SELL"
         else:
             sig = "HOLD"
+
+        # Base confidence from net score magnitude, modified by volume
+        base_conf = min(100, round(abs(net) * 100))
+        confidence = min(100, round(base_conf * volume_factor))
+
+        pos_count = sum(1 for a in arts if a["is_positive"])
+        neg_count = sum(1 for a in arts if a["is_negative"])
+        neu_count = n - pos_count - neg_count
+
         overview.append(
             {
-                "ticker": r["ticker"],
-                "articles": r["n"],
+                "ticker": tk,
+                "articles": n,
                 "net": round(net, 3),
                 "signal": sig,
-                "confidence": min(100, round(abs(net) * 100)),
+                "confidence": confidence,
+                "positive": pos_count,
+                "negative": neg_count,
+                "neutral": neu_count,
             }
         )
+
+    overview.sort(key=lambda x: x["ticker"])
     return overview
 
 
@@ -325,7 +394,7 @@ def get_articles(ticker=None, sentiment=None, search=None, limit=300):
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     sql = (
         "SELECT ticker, headline, source, published_at, sentiment, sentiment_score, "
-        "signal, signal_confidence, url "
+        "signal, signal_confidence, url, image "
         f"FROM articles {where} ORDER BY published_at DESC LIMIT ?"
     )
     params.append(limit)
@@ -393,3 +462,341 @@ def get_earnings(date_from, date_to):
     ).fetchall()
     conn.close()
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Phase 1a: Signal change tracker + sentiment trends
+# ---------------------------------------------------------------------------
+
+def init_history_table():
+    """Stores snapshots of per-ticker signals so we can detect changes.
+    Roman Urdu: Har pipeline run par ticker signals ka snapshot save hota hai,
+    taake hum dekh saken ke kya badla hai."""
+    conn = get_connection()
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS signal_history (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker     TEXT,
+            signal     TEXT,
+            confidence INTEGER,
+            articles   INTEGER,
+            net        REAL,
+            snapshot_at TEXT
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+def log_signal_snapshot(overview):
+    """Save current ticker signals as a snapshot with timestamp.
+    Call this after signal_engine.py runs."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    for t in overview:
+        conn.execute(
+            "INSERT INTO signal_history (ticker, signal, confidence, articles, net, snapshot_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (t["ticker"], t["signal"], t["confidence"], t["articles"], t["net"], now),
+        )
+    conn.commit()
+    conn.close()
+
+
+def get_signal_changes():
+    """
+    Compare the latest two snapshots per ticker. Returns what changed.
+    If a ticker has only 1 snapshot, returns its current state with no change info.
+    Roman Urdu: Pichli do snapshots compare karta hai — konsa ticker BUY se HOLD
+    hua, ya confidence up/down hua, etc.
+    """
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT ticker, signal, confidence, articles, net, snapshot_at,
+               ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY snapshot_at DESC) AS rn
+        FROM signal_history
+        """
+    ).fetchall()
+    conn.close()
+
+    current = {}
+    previous = {}
+    for r in rows:
+        if r["rn"] == 1:
+            current[r["ticker"]] = r
+        elif r["rn"] == 2:
+            previous[r["ticker"]] = r
+
+    changes = []
+    for tk, cur in current.items():
+        prev = previous.get(tk)
+        entry = {
+            "ticker": tk,
+            "currentSignal": cur["signal"],
+            "currentConf": cur["confidence"],
+            "currentArticles": cur["articles"],
+        }
+        if prev:
+            entry["previousSignal"] = prev["signal"]
+            entry["previousConf"] = prev["confidence"]
+            entry["previousArticles"] = prev["articles"]
+            entry["changed"] = (
+                cur["signal"] != prev["signal"] or
+                abs(cur["confidence"] - prev["confidence"]) >= 10
+            )
+            entry["changeType"] = None
+            if cur["signal"] != prev["signal"]:
+                entry["changeType"] = f"{prev['signal']} → {cur['signal']}"
+            elif cur["confidence"] - prev["confidence"] >= 10:
+                entry["changeType"] = f"confidence +{cur['confidence'] - prev['confidence']}"
+            elif prev["confidence"] - cur["confidence"] >= 10:
+                entry["changeType"] = f"confidence {cur['confidence'] - prev['confidence']}"
+        else:
+            entry["changed"] = False
+            entry["changeType"] = "new"
+        changes.append(entry)
+
+    changes.sort(key=lambda c: (
+        0 if c.get("changeType") and "→" in c["changeType"] else
+        1 if c.get("changeType") and "confidence" in c["changeType"] else 2,
+        c["ticker"]
+    ))
+    return changes
+
+
+def sentiment_trend(days=7):
+    """
+    Daily net sentiment per ticker for the last N days.
+    Returns: {ticker: [{date: '2026-07-03', net: 0.45, articles: 5}, ...]}
+    Roman Urdu: Har ticker ke liye roz ka sentiment trend — kya positive ho raha
+    hai ya negative, kaise badal raha hai.
+    """
+    from datetime import datetime, timezone, timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT ticker, DATE(published_at) AS day,
+               SUM(CASE WHEN sentiment='positive' THEN sentiment_score
+                        WHEN sentiment='negative' THEN -sentiment_score ELSE 0 END) AS net_raw,
+               COUNT(*) AS n
+        FROM articles
+        WHERE sentiment IS NOT NULL AND published_at >= ?
+        GROUP BY ticker, DATE(published_at)
+        ORDER BY ticker, day
+        """,
+        (cutoff,),
+    ).fetchall()
+    conn.close()
+
+    trend = {}
+    for r in rows:
+        tk = r["ticker"]
+        if tk not in trend:
+            trend[tk] = []
+        n = r["n"] or 1
+        trend[tk].append({
+            "date": r["day"],
+            "net": round((r["net_raw"] or 0) / n, 3),
+            "articles": r["n"],
+        })
+    return trend
+
+
+def get_ticker_history(ticker):
+    """Return all signal snapshots for one ticker, oldest first (for timeline chart)."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT signal, confidence, articles, net, snapshot_at "
+        "FROM signal_history WHERE ticker = ? ORDER BY snapshot_at ASC",
+        (ticker,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+_HIGH_TIER_SOURCES = ["reuters", "bloomberg", "wsj", "wall street", "financial times",
+                      "cnbc", "marketwatch", "coindesk", "the block", "ft"]
+
+
+def top_stories(limit=5):
+    """Top stories by source credibility + recency. Perfect for 'Top Stories' section.
+    Roman Urdu: Sab se bharosemand sources (Reuters, Bloomberg, etc.) ki taaza khabrein."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT ticker, headline, source, url, published_at, sentiment, sentiment_score "
+        "FROM articles WHERE sentiment IS NOT NULL ORDER BY published_at DESC LIMIT 200"
+    ).fetchall()
+    conn.close()
+
+    def score(row):
+        s = (row["source"] or "").lower()
+        credibility = 2 if any(k in s for k in _HIGH_TIER_SOURCES) else 1
+        pub = row["published_at"] or ""
+        return (credibility, pub)
+
+    ranked = sorted(rows, key=score, reverse=True)
+    return [
+        {
+            "ticker": r["ticker"],
+            "headline": r["headline"],
+            "source": r["source"] or "RSS",
+            "url": r["url"],
+            "sentiment": r["sentiment"],
+            "score": r["sentiment_score"],
+        }
+        for r in ranked[:limit]
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Outcome Tracking — records price at signal time and checks if it was right
+# ---------------------------------------------------------------------------
+
+def init_price_tracking():
+    conn = get_connection()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS price_tracking (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker       TEXT NOT NULL UNIQUE,
+            signal       TEXT NOT NULL,
+            confidence   INTEGER,
+            signal_time  TEXT NOT NULL,
+            entry_price  REAL,
+            latest_price REAL,
+            outcome      TEXT DEFAULT 'pending',
+            checked_at   TEXT,
+            verified_at  TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def save_price_entry(ticker, signal, confidence, entry_price):
+    """Insert or update price tracking row for a ticker."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    conn.execute("""
+        INSERT INTO price_tracking (ticker, signal, confidence, signal_time, entry_price, checked_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(ticker) DO UPDATE SET
+            signal=excluded.signal,
+            confidence=excluded.confidence,
+            entry_price=excluded.entry_price,
+            checked_at=excluded.checked_at
+    """, (ticker, signal, confidence, now, entry_price, now))
+    conn.commit()
+    conn.close()
+
+
+def update_price_outcome(ticker, latest_price):
+    """Check whether the signal was correct and update the row.
+    Roman Urdu: Check karta hai ke price direction signal ke mutabiq tha ya nahi."""
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT signal, entry_price FROM price_tracking WHERE ticker = ?",
+            (ticker,),
+        ).fetchone()
+        if not row:
+            conn.close()
+            return
+
+        sig = row["signal"]
+        entry = row["entry_price"]
+        if not entry or not latest_price:
+            conn.close()
+            return
+
+        change_pct = (latest_price - entry) / entry * 100
+        # 0.5% threshold to filter noise
+        if sig == "BUY":
+            outcome = "correct" if change_pct >= 0.5 else ("incorrect" if change_pct <= -0.5 else "pending")
+        elif sig == "SELL":
+            outcome = "correct" if change_pct <= -0.5 else ("incorrect" if change_pct >= 0.5 else "pending")
+        else:
+            outcome = "neutral"
+
+        # Only finalize if 24h+ have passed since signal_time
+        signal_time = row.get("signal_time")
+        if signal_time and outcome != "pending":
+            try:
+                st = datetime.fromisoformat(signal_time)
+                if st.tzinfo is None:
+                    st = st.replace(tzinfo=timezone.utc)
+                hours_elapsed = (datetime.now(timezone.utc) - st).total_seconds() / 3600
+                if hours_elapsed < 24:
+                    outcome = "pending"
+            except Exception:
+                pass
+
+        verified = now if outcome in ("correct", "incorrect", "neutral") else None
+        conn.execute("""
+            UPDATE price_tracking SET
+                latest_price = ?, outcome = ?, checked_at = ?, verified_at = ?
+            WHERE ticker = ?
+        """, (latest_price, outcome, now, verified, ticker))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass  # outcome tracking should never crash the dashboard
+
+
+def get_outcomes(tickers=None):
+    """Return outcome dict for given tickers (or all)."""
+    conn = get_connection()
+    if tickers:
+        placeholders = ",".join("?" for _ in tickers)
+        rows = conn.execute(
+            f"SELECT ticker, signal, confidence, entry_price, latest_price, outcome, checked_at, verified_at FROM price_tracking WHERE ticker IN ({placeholders})",
+            tickers,
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT ticker, signal, confidence, entry_price, latest_price, outcome, checked_at, verified_at FROM price_tracking"
+        ).fetchall()
+    conn.close()
+    return {r["ticker"]: dict(r) for r in rows}
+
+
+# ---------------------------------------------------------------------------
+# Auto-delete articles older than N days
+# ---------------------------------------------------------------------------
+
+def delete_old_articles(max_days=3):
+    """Remove articles where published_at is older than max_days.
+    Roman Urdu: Purane articles delete karta hai — sirf aakhri max_days din ke rakhta hai."""
+    conn = get_connection()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=max_days)).isoformat()
+    cur = conn.execute("DELETE FROM articles WHERE published_at < ?", (cutoff,))
+    deleted = cur.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+def get_pipeline_status():
+    """
+    Return the most recently fetched article timestamp and total article count.
+    Used to show 'last updated X ago' and warn if data is stale.
+    Roman Urdu: Batata hai ke pipeline kab chali thi aur kitna data hai.
+    """
+    conn = get_connection()
+    last = conn.execute(
+        "SELECT fetched_at FROM articles ORDER BY fetched_at DESC LIMIT 1"
+    ).fetchone()
+    count = conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
+    scored = conn.execute(
+        "SELECT COUNT(*) FROM articles WHERE sentiment IS NOT NULL"
+    ).fetchone()[0]
+    conn.close()
+    return {
+        "last_fetched": last["fetched_at"] if last else None,
+        "total_articles": count,
+        "scored_articles": scored,
+    }

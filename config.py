@@ -14,14 +14,14 @@ load_dotenv()
 
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "").strip()
 
-# --- Three asset universes (10 each). Defined here in code now (not .env) so the
-# dashboard can group them into Stocks / Crypto / Forex sections.
-# Roman Urdu: Ab teen alag list hain — har ek dashboard par apne section me dikhegi.
-# Note: the old TICKERS line in .env is no longer used.
-STOCKS = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "JPM", "V"]
-CRYPTO = ["BTC", "ETH", "SOL", "XRP", "BNB", "ADA", "DOGE", "AVAX", "LINK", "DOT"]
+# --- Three asset universes (10 each). Defined in code (not .env) so the
+# dashboard groups them into Stocks / Crypto / Forex sections.
+# Roman Urdu: Tickers yahan code me define hain, .env me nahi.
+STOCKS = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "JPM", "V", "SPY"]
+CRYPTO = ["BTC", "ETH", "SOL", "XRP", "BNB", "ADA", "DOGE", "AVAX", "LINK", "DOT", "SHIB", "PEPE", "BONK"]
 FOREX = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD",
-         "USDCAD", "NZDUSD", "EURGBP", "EURJPY", "GBPJPY"]
+         "USDCAD", "NZDUSD", "EURGBP", "EURJPY", "GBPJPY",
+         "XAUUSD", "XAGUSD", "EURCHF", "USDCNH"]
 
 TICKERS = STOCKS + CRYPTO + FOREX
 
@@ -59,15 +59,28 @@ LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip()
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1").strip()
 LLM_MODEL = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile").strip()
 
+# --- Gemini fallback LLM (when Groq hits rate limit) -------------------------
+# Gemini has a free tier via Google AI Studio: https://aistudio.google.com
+# It speaks the OpenAI-compatible protocol at:
+#   GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+#   GEMINI_MODEL=gemini-2.0-flash
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+GEMINI_MODEL = "gemini-2.0-flash"
+
 
 def assert_llm_configured():
-    if not LLM_API_KEY or LLM_API_KEY == "your_llm_key_here":
+    has_groq = LLM_API_KEY and LLM_API_KEY != "your_llm_key_here"
+    has_gemini = bool(GEMINI_API_KEY)
+    if not has_groq and not has_gemini:
         raise SystemExit(
             "No LLM API key found.\n"
             "Fix: get a FREE key at https://console.groq.com, then add to .env:\n"
             "  LLM_API_KEY=your_real_key\n"
             "  LLM_BASE_URL=https://api.groq.com/openai/v1\n"
-            "  LLM_MODEL=llama-3.3-70b-versatile"
+            "  LLM_MODEL=llama-3.3-70b-versatile\n"
+            "Or add a Gemini key:\n"
+            "  GEMINI_API_KEY=your_gemini_key"
         )
 
 

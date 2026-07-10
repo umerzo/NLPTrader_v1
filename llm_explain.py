@@ -14,24 +14,26 @@ Needs a free Groq key in .env (see config.py).
 """
 from datetime import datetime, timezone
 
-from openai import OpenAI
-
-from config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, assert_llm_configured
+from config import assert_llm_configured
 from db import (
     init_ticker_table,
     ticker_signal_overview,
     top_headlines_for_ticker,
     save_ticker_explanation,
 )
+from llm_fallback import llm_complete
 
 SYSTEM_PROMPT = (
     "You are a sharp financial news analyst. You get a ticker, its computed signal, and "
-    "recent headlines. Output 3 to 5 bullet points, each on its own line, each MAX 11 "
-    "words, grounded ONLY in the headlines. Start every line with exactly one marker:\n"
-    "  +  for a bullish point\n"
-    "  -  for a bearish point\n"
+    "recent headlines. Write 3 to 5 bullet points, one per line. Each bullet = what the "
+    "headline says + the concrete impact it has on the ticker's outlook (up/down/risk). "
+    "Example: 'New FDA approval opens $2B market, boosting revenue outlook' not just "
+    "'FDA approves new drug'. Keep each bullet under 22 words. Ground every bullet in "
+    "actual headlines. Start every line with exactly one marker:\n"
+    "  +  for a bullish / positive point\n"
+    "  -  for a bearish / negative point\n"
     "  =  for a neutral / mixed / 'evidence is weak' point\n"
-    "No intro, no heading, no full sentences, no advice, no markdown. Just the marked lines."
+    "No intro, no heading, no markdown. Just the marked lines."
 )
 
 
@@ -49,14 +51,12 @@ def main():
     assert_llm_configured()
     init_ticker_table()
 
-    client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_BASE_URL)
-
     overview = ticker_signal_overview()
     if not overview:
         print("No signals yet — run signal.py first.")
         return
 
-    print(f"Explaining {len(overview)} ticker signals via {LLM_MODEL}...\n")
+    print(f"Explaining {len(overview)} ticker signals via Groq → Gemini fallback...\n")
     now = datetime.now(timezone.utc).isoformat()
 
     for t in overview:
@@ -64,21 +64,18 @@ def main():
         headlines = top_headlines_for_ticker(ticker, limit=8)
         prompt = build_user_prompt(ticker, t["signal"], t["confidence"], headlines)
 
-        # temperature low -> steady, factual tone (not creative).
-        # Roman Urdu: temperature kam rakhi hai taake jawab solid aur factual rahe.
-        resp = client.chat.completions.create(
-            model=LLM_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.2,
+        explanation, provider = llm_complete(
+            system_prompt=SYSTEM_PROMPT,
+            user_prompt=prompt,
             max_tokens=180,
+            temperature=0.2,
         )
-        explanation = resp.choices[0].message.content.strip()
+        if explanation is None:
+            print(f"[{ticker}] Both LLM providers failed, skipping")
+            continue
         save_ticker_explanation(ticker, t["signal"], t["confidence"], explanation, now)
 
-        print(f"[{ticker}] {t['signal']} ({t['confidence']}/100)")
+        print(f"[{ticker}] {t['signal']} ({t['confidence']}/100) — via {provider}")
         print(f"  {explanation}\n")
 
     print("Saved all explanations to the ticker_signals table.")

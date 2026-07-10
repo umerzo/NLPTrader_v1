@@ -41,6 +41,7 @@ TICKER_ALIASES = {
     "JNJ": ["johnson & johnson", "johnson and johnson", "j&j"],
     "UBER": ["uber"],
     "AVGO": ["broadcom", "avgo"],
+    "SPY": ["spy", "s&p 500", "sp 500", "s&p500"],
     # --- Crypto (matched against Finnhub's general crypto news) ---
     "BTC": ["bitcoin", "btc"],
     "ETH": ["ethereum", "ether", "eth"],
@@ -52,6 +53,9 @@ TICKER_ALIASES = {
     "AVAX": ["avalanche"],
     "LINK": ["chainlink"],
     "DOT": ["polkadot"],
+    "SHIB": ["shiba inu", "shib"],
+    "PEPE": ["pepe"],
+    "BONK": ["bonk"],
     # --- Forex (matched against Finnhub's general forex news). Distinctive currency
     # names cut down noise; 'dollar' alone is too common so we avoid it. ---
     "EURUSD": ["eur/usd", "eurusd", "euro"],
@@ -64,6 +68,10 @@ TICKER_ALIASES = {
     "EURGBP": ["eur/gbp"],
     "EURJPY": ["eur/jpy"],
     "GBPJPY": ["gbp/jpy"],
+    "XAUUSD": ["gold", "xau", "xau/usd"],
+    "XAGUSD": ["silver", "xag", "xag/usd"],
+    "EURCHF": ["eur/chf"],
+    "USDCNH": ["usd/cnh", "chinese yuan", "yuan"],
 }
 
 

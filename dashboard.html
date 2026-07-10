@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NLPTrader — News-Grounded Trading Signals</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Inter', -apple-system, sans-serif;
+  background: #0a0b0f; color: #e2e4ea; min-height: 100vh;
+}
+a { color: inherit; text-decoration: none; }
+.container { max-width: 1320px; margin: 0 auto; padding: 20px 24px; }
+
+/* Header */
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 0; border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 20px;
+}
+.header-left { display: flex; align-items: center; gap: 14px; }
+.logo {
+  width: 38px; height: 38px; border-radius: 10px;
+  background: linear-gradient(135deg, #6c5ce7, #a855f7);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 13px; color: #fff;
+}
+.header h1 { font-size: 19px; font-weight: 800; letter-spacing: -0.3px; }
+.header-right { display: flex; align-items: center; gap: 12px; font-size: 13px; color: #8892a4; }
+.header-right button {
+  background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1);
+  color: #e2e4ea; padding: 6px 14px; border-radius: 8px; font-size: 12px;
+  font-family: inherit; cursor: pointer; font-weight: 500;
+}
+.header-right button:hover { background: rgba(255,255,255,0.12); }
+.header-right button.active { background: rgba(108,92,231,0.2); border-color: rgba(108,92,231,0.4); }
+
+/* Freshness */
+.freshness {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;
+}
+.freshness.fresh { background: rgba(52,211,153,0.12); color: #34d399; }
+.freshness.stale { background: rgba(251,191,36,0.12); color: #fbbf24; }
+.freshness.old, .freshness.never { background: rgba(248,113,113,0.12); color: #f87171; }
+.freshness .dot { width: 5px; height: 5px; border-radius: 50%; display: inline-block; }
+.freshness.fresh .dot { background: #34d399; }
+.freshness.stale .dot { background: #fbbf24; }
+.freshness.old .dot, .freshness.never .dot { background: #f87171; }
+
+/* Stats */
+.stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px; margin-bottom: 20px;
+}
+.stat {
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px; padding: 14px 16px;
+}
+.stat .num { font-size: 24px; font-weight: 800; }
+.stat .label { font-size: 11px; color: #8892a4; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.4px; }
+
+/* Section header */
+.section-header {
+  display: flex; align-items: center; gap: 10px; margin: 28px 0 14px;
+}
+.section-header h2 { font-size: 16px; font-weight: 700; }
+.section-header .count {
+  font-size: 11px; color: #8892a4; background: rgba(255,255,255,0.06);
+  padding: 2px 9px; border-radius: 10px;
+}
+.section-header .line { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(255,255,255,0.1), transparent); }
+
+/* Top Stories */
+.stories {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;
+}
+.story-card {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 12px 14px; background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07); border-radius: 10px;
+  transition: background 0.15s;
+}
+.story-card:hover { background: rgba(255,255,255,0.06); }
+.story-card .sc-tone {
+  width: 4px; height: 100%; min-height: 36px; border-radius: 2px; flex-shrink: 0;
+}
+.story-card .sc-body { flex: 1; min-width: 0; }
+.story-card .sc-headline {
+  font-size: 13px; font-weight: 500; color: #d1d5db;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.story-card .sc-meta { font-size: 11px; color: #6b7280; margin-top: 4px; }
+.story-card .sc-tag {
+  font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px;
+  margin-left: 6px;
+}
+@media (max-width: 768px) { .stories { grid-template-columns: 1fr; } }
+
+/* Changes strip */
+.changes-strip {
+  display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 6px;
+}
+.change-card {
+  flex-shrink: 0; padding: 10px 14px; border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.09); background: rgba(255,255,255,0.03);
+  min-width: 170px;
+}
+.change-card .ch-ticker { font-weight: 700; font-size: 14px; }
+.change-card .ch-type {
+  font-size: 11px; margin-top: 3px; font-weight: 600;
+  padding: 2px 7px; border-radius: 5px; display: inline-block;
+}
+.change-card .ch-type.signal-change { background: rgba(251,191,36,0.15); color: #fbbf24; }
+.change-card .ch-type.conf-up { background: rgba(52,211,153,0.15); color: #34d399; }
+.change-card .ch-type.conf-down { background: rgba(248,113,113,0.15); color: #f87171; }
+.change-card .ch-type.new-signal { background: rgba(96,165,250,0.15); color: #60a5fa; }
+.no-changes { font-size: 13px; color: #6b7280; padding: 6px 0; }
+
+/* Signal grid */
+.signal-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 10px;
+}
+.signal-card {
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px; padding: 16px; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.signal-card:hover { border-color: rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); }
+.signal-card .sc-top {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+}
+.signal-card .sc-ticker { display: flex; align-items: center; gap: 8px; }
+.signal-card .sc-ticker .star {
+  cursor: pointer; font-size: 16px; line-height: 1; user-select: none;
+  color: #4b5563; transition: color 0.15s;
+}
+.signal-card .sc-ticker .star.on { color: #fbbf24; }
+.signal-card .sc-ticker .star:hover { color: #fbbf24; }
+.signal-card .sc-ticker .sym { font-size: 16px; font-weight: 800; letter-spacing: 0.2px; }
+.signal-card .sc-ticker .size { font-size: 11px; color: #6b7280; }
+.signal-card .badge {
+  padding: 3px 11px; border-radius: 7px; font-weight: 700; font-size: 11px;
+}
+.badge.buy { background: rgba(52,211,153,0.15); color: #34d399; }
+.badge.sell { background: rgba(248,113,113,0.15); color: #f87171; }
+.badge.hold { background: rgba(156,163,175,0.15); color: #9ca3af; }
+.conf-bar {
+  height: 3px; border-radius: 3px; background: rgba(255,255,255,0.08);
+  margin: 6px 0 5px; overflow: hidden;
+}
+.conf-bar .fill { height: 100%; border-radius: 3px; transition: width 0.4s ease; }
+.signal-card .sc-bottom {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 11px; color: #6b7280; margin-top: 3px;
+}
+
+/* News */
+.news-list { display: flex; flex-direction: column; gap: 5px; }
+.news-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; border-radius: 8px;
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+  font-size: 13px; transition: background 0.15s;
+}
+.news-item:hover { background: rgba(255,255,255,0.06); }
+.news-item .ni-tone { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+.news-item .ni-headline { flex: 1; color: #d1d5db; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.news-item .ni-meta { font-size: 11px; color: #6b7280; white-space: nowrap; }
+.news-item .ni-ticker { font-weight: 600; font-size: 11px; color: #8892a4; min-width: 44px; text-align: right; }
+
+/* Detail modal */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; z-index: 100;
+  background: rgba(0,0,0,0.7); align-items: center; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: #14151b; border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px; width: 92%; max-width: 580px; max-height: 85vh;
+  overflow-y: auto; padding: 26px; position: relative;
+}
+.modal-close {
+  position: absolute; top: 14px; right: 14px;
+  background: rgba(255,255,255,0.08); border: none; color: #8892a4;
+  width: 30px; height: 30px; border-radius: 7px; cursor: pointer;
+  font-size: 15px; display: flex; align-items: center; justify-content: center;
+}
+.modal-close:hover { background: rgba(255,255,255,0.12); color: #fff; }
+.modal .m-ticker { font-size: 21px; font-weight: 800; margin-bottom: 4px; }
+.modal .m-signal { font-size: 13px; margin-bottom: 14px; }
+.modal .m-bullets { margin: 14px 0; }
+.modal .m-bullet {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 5px 0; font-size: 13px; line-height: 1.4; color: #d1d5db;
+}
+.modal .m-bullet .m { font-weight: 700; flex-shrink: 0; width: 14px; }
+.modal .m-bullet .pos { color: #34d399; }
+.modal .m-bullet .neg { color: #f87171; }
+.modal .m-bullet .neu { color: #8892a4; }
+.modal .m-articles { margin-top: 14px; }
+.modal .m-article {
+  padding: 7px 10px; border-radius: 7px; font-size: 13px;
+  background: rgba(255,255,255,0.03); margin-bottom: 5px;
+}
+
+/* History timeline in modal */
+.history-strip {
+  display: flex; gap: 6px; overflow-x: auto; padding: 8px 0 4px;
+}
+.history-dot {
+  flex-shrink: 0; width: 32px; text-align: center; cursor: default;
+}
+.history-dot .hd-circle {
+  width: 12px; height: 12px; border-radius: 50%; margin: 0 auto 3px;
+  border: 2px solid;
+}
+.history-dot .hd-label { font-size: 9px; color: #6b7280; white-space: nowrap; }
+.history-dot .hd-conf { font-size: 8px; color: #4b5563; }
+.history-line {
+  flex-shrink: 0; width: 12px; display: flex; align-items: center;
+}
+.history-line::after {
+  content: ''; display: block; width: 100%;
+  height: 2px; background: rgba(255,255,255,0.08);
+}
+
+/* Search */
+.search-bar {
+  display: flex; gap: 10px; margin-bottom: 14px;
+}
+.search-bar input {
+  flex: 1; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 9px; padding: 9px 14px; font-size: 13px; color: #e2e4ea;
+  font-family: inherit; outline: none;
+}
+.search-bar input:focus { border-color: rgba(108,92,231,0.5); }
+.search-bar input::placeholder { color: #6b7280; }
+
+/* Loading */
+.loading {
+  text-align: center; padding: 60px 20px; color: #6b7280; font-size: 14px;
+}
+.loading .spinner {
+  width: 30px; height: 30px; border: 3px solid rgba(255,255,255,0.1);
+  border-top-color: #6c5ce7; border-radius: 50%; margin: 0 auto 10px;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+
+/* Print */
+@media print {
+  body { background: #fff; color: #000; }
+  .header-right button { display: none; }
+  .search-bar { display: none; }
+  .modal-overlay { display: none !important; }
+  .freshness { border: 1px solid #ddd; }
+  .signal-card { break-inside: avoid; border: 1px solid #ccc; background: #fafafa; }
+  .signal-card .sc-ticker .sym { color: #000; }
+  .signal-card .sc-bottom { color: #666; }
+  .news-item { border: 1px solid #eee; }
+  .news-item .ni-headline { color: #333; }
+  .badge.buy { background: #d4edda; color: #155724; }
+  .badge.sell { background: #f8d7da; color: #721c24; }
+  .badge.hold { background: #e2e3e5; color: #383d41; }
+  .stat { border: 1px solid #ddd; background: #fafafa; }
+  .stat .num { color: #000; }
+  .stat .label { color: #666; }
+  .section-header h2 { color: #000; }
+  .story-card { border: 1px solid #ddd; }
+  .story-card .sc-headline { color: #333; }
+  .container { max-width: 100%; padding: 12px; }
+  .changes-strip { display: none; }
+  .stories { grid-template-columns: 1fr 1fr; }
+  .signal-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 640px) {
+  .container { padding: 12px; }
+  .header { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .signal-grid { grid-template-columns: 1fr; }
+  .header-right { flex-wrap: wrap; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="header-left">
+      <div class="logo">NT</div>
+      <h1>NLPTrader</h1>
+    </div>
+    <div class="header-right">
+      <span id="lastUpdated"></span>
+      <span id="freshness" class="freshness"><span class="dot"></span> <span id="freshnessText">loading...</span></span>
+      <button id="watchToggle" onclick="toggleWatchFilter()">&#9733; Watchlist</button>
+      <button onclick="window.print()">&#128424; Print</button>
+    </div>
+  </div>
+
+  <div id="loading" class="loading">
+    <div class="spinner"></div>
+    Loading market signals...
+  </div>
+
+  <div id="dashboard" style="display:none">
+    <!-- Top Stories -->
+    <div id="topStoriesSection" style="display:none">
+      <div class="section-header">
+        <h2>Top Stories</h2>
+        <span class="count" id="storiesCount">0</span>
+        <span class="line"></span>
+      </div>
+      <div class="stories" id="stories"></div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats" id="stats"></div>
+
+    <!-- Signal Changes -->
+    <div class="section-header">
+      <h2>What Changed</h2>
+      <span class="count" id="changesCount">0</span>
+      <span class="line"></span>
+    </div>
+    <div class="changes-strip" id="changes"></div>
+
+    <!-- Search -->
+    <div class="search-bar">
+      <input type="text" id="search" placeholder="Search ticker..." oninput="renderSignals()">
+    </div>
+
+    <!-- Signals -->
+    <div class="section-header">
+      <h2>Signals</h2>
+      <span class="count" id="signalsCount">0</span>
+      <span class="line"></span>
+    </div>
+    <div class="signal-grid" id="signals"></div>
+
+    <!-- News -->
+    <div class="section-header" style="margin-top:32px">
+      <h2>News Feed</h2>
+      <span class="count" id="newsCount">0</span>
+      <span class="line"></span>
+    </div>
+    <div class="news-list" id="news"></div>
+  </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">&times;</button>
+    <div class="m-ticker" id="mTicker"></div>
+    <div class="m-signal" id="mSignal"></div>
+    <div id="mHistory" style="margin:10px 0"></div>
+    <div class="m-bullets" id="mBullets"></div>
+    <div class="section-header"><h3>Supporting Articles</h3></div>
+    <div class="m-articles" id="mArticles"></div>
+  </div>
+</div>
+
+<script>
+let signals = [];
+let news = [];
+let stats = {};
+let changes = [];
+let stories = [];
+let watchlist = JSON.parse(localStorage.getItem('nlp_watchlist') || '[]');
+
+function toggleWatch(ticker) {
+  const idx = watchlist.indexOf(ticker);
+  if (idx >= 0) watchlist.splice(idx, 1);
+  else watchlist.push(ticker);
+  localStorage.setItem('nlp_watchlist', JSON.stringify(watchlist));
+  renderSignals();
+}
+
+function toggleWatchFilter() {
+  const btn = document.getElementById('watchToggle');
+  btn.classList.toggle('active');
+  renderSignals();
+}
+
+function isWatchActive() {
+  return document.getElementById('watchToggle').classList.contains('active');
+}
+
+async function init() {
+  try {
+    const [dashRes, changesRes, storiesRes] = await Promise.all([
+      fetch('/api/dashboard').then(r => r.json()),
+      fetch('/api/changes').then(r => r.json()),
+      fetch('/api/topstories?limit=6').then(r => r.json())
+    ]);
+    signals = dashRes.signals || [];
+    news = dashRes.news || [];
+    stats = dashRes.stats || {};
+    changes = changesRes.changes || [];
+    stories = storiesRes.stories || [];
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+
+    renderStories();
+    renderStats();
+    renderChanges();
+    renderSignals();
+    renderNews();
+    renderFreshness();
+
+    if (watchlist.length > 0) {
+      document.getElementById('watchToggle').classList.add('active');
+    }
+  } catch (e) {
+    document.getElementById('loading').innerHTML = '<div style="color:#f87171">Failed to load data. Make sure the API server is running.</div>';
+  }
+}
+
+function renderStories() {
+  const el = document.getElementById('stories');
+  if (!stories.length) return;
+  document.getElementById('topStoriesSection').style.display = 'block';
+  document.getElementById('storiesCount').textContent = stories.length;
+  el.innerHTML = stories.map(s => {
+    const color = s.sentiment === 'positive' ? '#34d399' : s.sentiment === 'negative' ? '#f87171' : '#6b7280';
+    const toneLabel = s.sentiment === 'positive' ? 'Bullish' : s.sentiment === 'negative' ? 'Bearish' : 'Neutral';
+    return `<div class="story-card">
+      <div class="sc-tone" style="background:${color}"></div>
+      <div class="sc-body">
+        <div class="sc-headline" title="${s.headline.replace(/"/g,'&quot;')}">${s.headline}</div>
+        <div class="sc-meta">${s.source} &middot; <span style="color:${color}">${toneLabel}</span><span class="sc-tag" style="background:rgba(255,255,255,0.06);color:#8892a4">${s.ticker}</span></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderStats() {
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><div class="num">${stats.newsProcessed||0}</div><div class="label">Articles</div></div>
+    <div class="stat"><div class="num">${stats.scoredArticles||0}</div><div class="label">Scored</div></div>
+    <div class="stat"><div class="num">${stats.signalsToday||0}</div><div class="label">Signals</div></div>
+    <div class="stat"><div class="num">${stats.sources||0}</div><div class="label">Sources</div></div>
+    <div class="stat"><div class="num">${stats.highConf||0}</div><div class="label">High Conf</div></div>
+  `;
+}
+
+function renderChanges() {
+  const el = document.getElementById('changes');
+  document.getElementById('changesCount').textContent = changes.length;
+  if (!changes.length) {
+    el.innerHTML = '<div class="no-changes">No signal changes since last pipeline run.</div>';
+    return;
+  }
+  el.innerHTML = changes.map(c => {
+    let cls = 'new-signal', lbl = c.changeType || '';
+    if (lbl.includes('→')) cls = 'signal-change';
+    else if (lbl.includes('+')) cls = 'conf-up';
+    else if (lbl.includes('-')) cls = 'conf-down';
+    return `<div class="change-card"><div class="ch-ticker">${c.ticker}</div><div class="ch-type ${cls}">${lbl}</div></div>`;
+  }).join('');
+}
+
+function renderSignals() {
+  const q = document.getElementById('search').value.trim().toUpperCase();
+  const watchOnly = isWatchActive();
+  let filtered = signals;
+  if (q) filtered = filtered.filter(s => s.ticker.includes(q));
+  if (watchOnly && watchlist.length) filtered = filtered.filter(s => watchlist.includes(s.ticker));
+  else if (watchOnly && !watchlist.length) filtered = [];
+
+  const el = document.getElementById('signals');
+  document.getElementById('signalsCount').textContent = filtered.length;
+  el.innerHTML = filtered.map(s => {
+    const cls = (s.dir || 'HOLD').toLowerCase();
+    const barColor = cls === 'buy' ? '#34d399' : cls === 'sell' ? '#f87171' : '#6b7280';
+    const starred = watchlist.includes(s.ticker);
+    return `<div class="signal-card" onclick="if(event.target.closest('.star'))return;openDetail('${s.ticker}')">
+      <div class="sc-top">
+        <div class="sc-ticker">
+          <span class="star ${starred?'on':''}" onclick="event.stopPropagation();toggleWatch('${s.ticker}')">${starred?'&#9733;':'&#9734;'}</span>
+          <span class="sym">${s.ticker}</span>
+          <span class="size">${s.sampleSize||0} arts</span>
+        </div>
+        <span class="badge ${cls}">${s.dir||'HOLD'}</span>
+      </div>
+      <div class="conf-bar"><div class="fill" style="width:${s.conf||0}%;background:${barColor}"></div></div>
+      <div class="sc-bottom">
+        <span>${s.conf||0}% confident</span>
+        <span>${s.time||''}</span>
+      </div>
+    </div>`;
+  }).join('');
+  // Show empty message if watchlist active and nothing matches
+  if (watchOnly && !filtered.length && watchlist.length) {
+    el.innerHTML = '<div style="color:#6b7280;font-size:13px;padding:16px;text-align:center">No watchlisted tickers match. Star some tickers above.</div>';
+  }
+}
+
+function renderNews() {
+  const el = document.getElementById('news');
+  document.getElementById('newsCount').textContent = news.length;
+  el.innerHTML = news.map(n => {
+    const color = n.tone === 'green' ? '#34d399' : n.tone === 'red' ? '#f87171' : '#6b7280';
+    return `<div class="news-item">
+      <span class="ni-tone" style="background:${color}"></span>
+      <span class="ni-headline">${n.headline}</span>
+      <span class="ni-meta">${n.source}</span>
+      <span class="ni-meta">${n.time||''}</span>
+      <span class="ni-ticker">${n.ticker}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderFreshness() {
+  const el = document.getElementById('freshness');
+  const txt = document.getElementById('freshnessText');
+  const da = (stats.dataAge || 'never').toLowerCase();
+  el.className = 'freshness ' + da;
+  txt.textContent = stats.lastUpdated ? `Updated ${stats.lastUpdated}` : 'No data';
+  document.getElementById('lastUpdated').textContent = `${stats.scoredArticles||0} articles scored`;
+}
+
+async function openDetail(ticker) {
+  document.getElementById('mTicker').textContent = ticker;
+  document.getElementById('mSignal').innerHTML = 'Loading...';
+  document.getElementById('mBullets').innerHTML = '';
+  document.getElementById('mArticles').innerHTML = '';
+  document.getElementById('mHistory').innerHTML = '';
+  document.getElementById('modal').classList.add('open');
+
+  try {
+    const [detailRes, histRes] = await Promise.all([
+      fetch(`/api/ticker/${ticker}`).then(r => r.json()),
+      fetch(`/api/history/${ticker}`).then(r => r.json())
+    ]);
+    const d = detailRes;
+    const cls = (d.dir || 'HOLD').toLowerCase();
+    document.getElementById('mSignal').innerHTML = `<span class="badge ${cls}">${d.dir}</span> &middot; ${d.conf}% confidence &middot; <span style="color:#6b7280;font-size:12px">based on ${d.sampleSize||0} articles</span>`;
+
+    // History timeline
+    if (histRes.history && histRes.history.length > 1) {
+      const h = histRes.history;
+      const hColors = {BUY:'#34d399',SELL:'#f87171',HOLD:'#6b7280'};
+      let html = '<div style="font-size:12px;color:#8892a4;margin-bottom:4px">Signal History</div><div class="history-strip">';
+      h.forEach((p, i) => {
+        const c = hColors[p.signal] || '#6b7280';
+        html += `<div class="history-dot"><div class="hd-circle" style="border-color:${c}"></div><div class="hd-label">${p.confidence}</div><div class="hd-conf">${p.signal}</div></div>`;
+        if (i < h.length - 1) html += '<div class="history-line"></div>';
+      });
+      html += '</div>';
+      document.getElementById('mHistory').innerHTML = html;
+    }
+
+    // Bullets
+    if (d.bullets && d.bullets.length) {
+      document.getElementById('mBullets').innerHTML = d.bullets.map(b =>
+        `<div class="m-bullet"><span class="m ${b.mark === '▲' ? 'pos' : b.mark === '▼' ? 'neg' : 'neu'}">${b.mark}</span><span>${b.text}</span></div>`
+      ).join('');
+    } else {
+      document.getElementById('mBullets').innerHTML = '<div style="color:#6b7280;font-size:13px">No LLM explanation yet. Run llm_explain.py</div>';
+    }
+
+    // Articles
+    if (d.articles && d.articles.length) {
+      document.getElementById('mArticles').innerHTML = d.articles.map(a =>
+        `<div class="m-article"><span>${a.headline}</span><span style="color:#6b7280;font-size:11px;margin-left:8px;white-space:nowrap">${a.source}</span></div>`
+      ).join('');
+    } else {
+      document.getElementById('mArticles').innerHTML = '<div style="color:#6b7280;font-size:13px">No articles found.</div>';
+    }
+  } catch (e) {
+    document.getElementById('mBullets').innerHTML = '<div style="color:#f87171">Failed to load details.</div>';
+  }
+}
+
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+init();
+</script>
+</body>
+</html>
