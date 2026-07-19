@@ -1,7 +1,0 @@
-requests>=2.31
-python-dotenv>=1.0
-# Step 3 — FinBERT sentiment
-transformers>=4.40
-torch>=2.2
-# Step 4b — LLM explanations (works with Groq / DeepSeek / OpenAI)
-openai>=1.30

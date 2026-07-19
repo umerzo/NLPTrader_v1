@@ -1,3 +1,39 @@
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Environment secrets
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# VS Code
+.vscode/
+
+# Python
+.venv/
+venv/
+env/
+__pycache__/
+
+# Node
+node_modules/
+.next/
+dist/
+
+# Secrets
+.env
+
+
+
+
+
 # Secrets — NEVER commit these
 .env
 .streamlit/secrets.toml

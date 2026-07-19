@@ -1,0 +1,215 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Light theme (default) */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-tertiary: #f1f5f9;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --border-color: #e2e8f0;
+  --accent-color: #3b82f6;
+}
+
+.dark {
+  /* Dark theme */
+  --bg-primary: #0a0b0f;
+  --bg-secondary: #121425;
+  --bg-tertiary: #16192d;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --border-color: #1e213b;
+  --accent-color: #6366f1;
+}
+
+@layer base {
+  * {
+    @apply border-[var(--border-color)];
+  }
+  
+  body {
+    @apply bg-[var(--bg-primary)] text-[var(--text-primary)] antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-[var(--bg-primary)];
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-[var(--border-color)] rounded-full;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-[var(--text-muted)];
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .btn-primary {
+    @apply btn bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500 dark:bg-primary-500 dark:hover:bg-primary-600;
+  }
+  
+  .btn-secondary {
+    @apply btn bg-[var(--bg-secondary)] text-[var(--text-primary)] border border-[var(--border-color)] hover:bg-[var(--bg-tertiary)] focus:ring-[var(--accent-color)];
+  }
+  
+  .btn-ghost {
+    @apply btn bg-transparent hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] focus:ring-[var(--accent-color)];
+  }
+  
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+  }
+  
+  .input {
+    @apply w-full px-3 py-2 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] placeholder-[var(--text-muted)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-color)] focus:border-transparent;
+  }
+  
+  .select {
+    @apply input appearance-none bg-no-repeat bg-right pr-10;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 0.5rem center;
+    background-size: 1.5em 1.5em;
+  }
+  
+  .card {
+    @apply bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl overflow-hidden;
+  }
+  
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  
+  .badge-buy {
+    @apply badge bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400;
+  }
+  
+  .badge-sell {
+    @apply badge bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400;
+  }
+  
+  .badge-hold {
+    @apply badge bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300;
+  }
+  
+  .badge-pending {
+    @apply badge bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400;
+  }
+  
+  .table-container {
+    @apply overflow-x-auto;
+  }
+  
+  .table {
+    @apply w-full text-sm;
+  }
+  
+  .table th {
+    @apply px-4 py-3 text-left font-medium text-[var(--text-secondary)] bg-[var(--bg-tertiary)] border-b border-[var(--border-color)];
+  }
+  
+  .table td {
+    @apply px-4 py-3 border-b border-[var(--border-color)];
+  }
+  
+  .table tbody tr:hover {
+    @apply bg-[var(--bg-tertiary)];
+  }
+  
+  .table tbody tr:last-child td {
+    @apply border-b-0;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .animate-slide-down {
+    animation: slideDown 0.2s ease-out;
+  }
+  
+  .animate-fade-in {
+    animation: fadeIn 0.15s ease-out;
+  }
+}
+
+/* Loading skeleton */
+.skeleton {
+  @apply animate-pulse bg-[var(--bg-tertiary)] rounded;
+}
+
+/* Trading-specific colors */
+.text-profit {
+  @apply text-green-600 dark:text-green-400;
+}
+
+.text-loss {
+  @apply text-red-600 dark:text-red-400;
+}
+
+.bg-profit {
+  @apply bg-green-100 dark:bg-green-900/30;
+}
+
+.bg-loss {
+  @apply bg-red-100 dark:bg-red-900/30;
+}
+
+/* Confidence bar */
+.confidence-bar {
+  @apply h-2 rounded-full bg-[var(--border-color)] overflow-hidden;
+}
+
+.confidence-bar-fill {
+  @apply h-full rounded-full transition-all duration-500;
+}
+
+.confidence-bar-fill.buy {
+  @apply bg-green-500;
+}
+
+.confidence-bar-fill.sell {
+  @apply bg-red-500;
+}
+
+.confidence-bar-fill.hold {
+  @apply bg-gray-500;
+}
+
+/* Tooltip */
+.tooltip {
+  @apply absolute z-50 px-3 py-2 text-xs font-medium text-white bg-gray-900 rounded-lg shadow-lg opacity-0 invisible transition-all duration-200;
+}
+
+.tooltip-trigger:hover .tooltip {
+  @apply opacity-100 visible;
+}
+
+/* Focus visible for accessibility */
+*:focus-visible {
+  @apply outline-none ring-2 ring-[var(--accent-color)] ring-offset-2 ring-offset-[var(--bg-primary)];
+}
+
+/* Print styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
