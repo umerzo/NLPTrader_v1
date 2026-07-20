@@ -8,11 +8,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # Database
-    postgres_user: str = "postgres"
-    postgres_password: str = "postgres"
-    postgres_host: str = "localhost"
-    postgres_port: int = 5432
-    postgres_db: str = "nlptrader"
+    postgres_user: str = Field(default="postgres", validation_alias="POSTGRES_USER")
+    postgres_password: str = Field(default="postgres", validation_alias="POSTGRES_PASSWORD")
+    postgres_host: str = Field(default="localhost", validation_alias="POSTGRES_HOST")
+    postgres_port: int = Field(default=5432, validation_alias="POSTGRES_PORT")
+    postgres_db: str = Field(default="nlptrader", validation_alias="POSTGRES_DB")
     db_echo: bool = False
 
     # External APIs
