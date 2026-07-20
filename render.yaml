@@ -1,0 +1,75 @@
+databases:
+  - name: nlptrader-db
+    databaseName: nlptrader
+    user: nlptrader
+    region: oregon
+    plan: free
+    postgresMajorVersion: 16
+
+services:
+  - type: web
+    name: nlptrader-api
+    runtime: python
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: >
+      alembic upgrade head &&
+      uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHONPATH
+        value: /opt/render/project/src
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nlptrader-db
+          property: connectionString
+      - key: FINNHUB_API_KEY
+        sync: false
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: LLM_MODEL
+        value: llama-3.3-70b-versatile
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: TICKERS
+        value: BTC,ETH,XAUUSD,NVDA
+      - key: POSTGRES_USER
+        fromDatabase:
+          name: nlptrader-db
+          property: user
+      - key: POSTGRES_PASSWORD
+        fromDatabase:
+          name: nlptrader-db
+          property: password
+      - key: POSTGRES_HOST
+        fromDatabase:
+          name: nlptrader-db
+          property: host
+      - key: POSTGRES_PORT
+        fromDatabase:
+          name: nlptrader-db
+          property: port
+      - key: POSTGRES_DB
+        fromDatabase:
+          name: nlptrader-db
+          property: database
+
+  - type: web
+    name: nlptrader-frontend
+    runtime: static
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: |
+      cd frontend && npm install && npm run build
+    staticPublishPath: frontend/dist
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: nlptrader-api
+          property: host
