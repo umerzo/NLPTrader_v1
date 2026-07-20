@@ -56,7 +56,6 @@ services:
   - type: web
     name: nlptrader-frontend
     runtime: static
-    plan: free
     branch: main
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: frontend/dist
