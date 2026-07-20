@@ -103,6 +103,18 @@ This runs the full pipeline:
 
 ---
 
+## Screenshots
+
+| Dashboard | Analytics |
+|---|---|
+| ![Dashboard](Screenshots/Dashboard.png) | ![Analytics](Screenshots/Analytics.png) |
+
+| News Feed | Technical Analysis |
+|---|---|
+| ![News Feed](Screenshots/News.png) | ![Technical Analysis](Screenshots/Technical%20Analysis.png) |
+
+---
+
 ## Configuration (`.env`)
 
 | Variable | Required | Default | Description |
