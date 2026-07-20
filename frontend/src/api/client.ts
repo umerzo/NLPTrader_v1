@@ -266,7 +266,7 @@ export interface TAAnalysis {
 
 export const newsApi = {
   getArticles: (params: { ticker?: string; limit?: number; offset?: number } = {}) =>
-    api.get<PaginatedNews>(`${PREFIX}/news/${params.ticker || ''}`, { params: { limit: params.limit, offset: params.offset } }).then(r => r.data),
+    api.get<PaginatedNews>(`${PREFIX}/news`, { params }).then(r => r.data),
 }
 
 export type TickerSearchResult =

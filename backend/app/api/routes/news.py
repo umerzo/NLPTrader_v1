@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
+from sqlalchemy.orm import joinedload
 
 from backend.app.db.session import get_db
 from backend.app.db.models import RawArticle
@@ -8,27 +9,24 @@ from backend.app.db.models import RawArticle
 router = APIRouter(prefix="/api/news", tags=["news"])
 
 
-@router.get("/{ticker}")
+@router.get("")
 async def get_news(
-    ticker: str,
+    ticker: str | None = Query(None, description="Filter by ticker, or omit for all"),
     limit: int = Query(50, le=200),
     offset: int = 0,
     session: AsyncSession = Depends(get_db),
 ):
-    """Paginated articles + sentiment badge per article for a ticker."""
-    ticker = ticker.upper()
+    stmt = select(RawArticle).options(joinedload(RawArticle.ticker_links))
+    count_stmt = select(RawArticle.id)
 
-    stmt = select(RawArticle).where(
-        RawArticle.ticker_links.any(ticker=ticker)
-    )
+    if ticker:
+        ticker = ticker.upper()
+        stmt = stmt.where(RawArticle.ticker_links.any(ticker=ticker))
+        count_stmt = count_stmt.where(RawArticle.ticker_links.any(ticker=ticker))
 
-    count_stmt = select(RawArticle.id).where(
-        RawArticle.ticker_links.any(ticker=ticker)
-    )
     total = len((await session.execute(count_stmt)).all())
-
     stmt = stmt.order_by(desc(RawArticle.published_at)).limit(limit).offset(offset)
-    rows = (await session.execute(stmt)).scalars().all()
+    rows = (await session.execute(stmt)).unique().scalars().all()
 
     return {
         "items": [
