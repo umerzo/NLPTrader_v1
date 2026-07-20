@@ -53,7 +53,7 @@ services:
           name: nlptrader-db
           property: database
 
-  - type: web
+  - type: static
     name: nlptrader-frontend
     runtime: static
     branch: main
