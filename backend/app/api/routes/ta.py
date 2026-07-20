@@ -14,12 +14,12 @@ from backend.app.signals.ta_engine import (
     calculate_trade_setup, TASignal,
 )
 
-router = APIRouter(prefix="/ta", tags=["technical-analysis"])
+router = APIRouter(prefix="/api/ta", tags=["technical-analysis"])
 
-SUPPORTED_TICKERS = ["BTC", "ETH", "XAUUSD", "NVDA"]
 SUPPORTED_TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 
-YF_TICKER_MAP = {"BTC": "BTC-USD", "ETH": "ETH-USD", "XAUUSD": "GC=F", "NVDA": "NVDA"}
+TICKER_ALIASES = {"XAU": "XAUUSD", "GOLD": "XAUUSD"}
+YF_TICKER_MAP = {"BTC": "BTC-USD", "ETH": "ETH-USD", "XAUUSD": "GC=F"}
 YF_TIMEFRAMES = {"15m": ("15m", "60d"), "1h": ("1h", "1mo"), "4h": ("1h", "2mo"), "1d": ("1d", "6mo")}
 
 from datetime import datetime, timezone
@@ -29,9 +29,9 @@ async def _auto_fetch_bars(ticker: str, timeframe: str, repo: PriceRepository) -
     """Fetch price data from yfinance, store it, return bars."""
     import yfinance as yf
 
-    yf_ticker = YF_TICKER_MAP.get(ticker)
+    yf_ticker = YF_TICKER_MAP.get(ticker, ticker)
     tf_info = YF_TIMEFRAMES.get(timeframe)
-    if not yf_ticker or not tf_info:
+    if not tf_info:
         return []
 
     interval, period = tf_info
@@ -49,7 +49,7 @@ async def _auto_fetch_bars(ticker: str, timeframe: str, repo: PriceRepository) -
         if ts.tzinfo is None:
             ts = ts.replace(tzinfo=timezone.utc)
         bars.append({
-            "timestamp": ts,
+            "ts": ts,
             "open": float(row["Open"]),
             "high": float(row["High"]),
             "low": float(row["Low"]),
@@ -63,22 +63,21 @@ async def _auto_fetch_bars(ticker: str, timeframe: str, repo: PriceRepository) -
     return bars
 
 
-@router.get("/analyze")
+@router.get("/{ticker}")
 async def analyze_technical(
-    ticker: str = Query(..., description="Ticker symbol"),
+    ticker: str,
     timeframe: str = Query("1h", description="Price timeframe"),
     session: AsyncSession = Depends(get_db),
 ):
     ticker = ticker.upper()
-    if ticker not in SUPPORTED_TICKERS:
-        raise HTTPException(400, f"Unsupported ticker: {ticker}")
+    ticker = TICKER_ALIASES.get(ticker, ticker)
     if timeframe not in SUPPORTED_TIMEFRAMES:
         raise HTTPException(400, f"Unsupported timeframe: {timeframe}")
 
     repo = PriceRepository(session)
     bars_orm = await repo.get_latest(ticker, timeframe, limit=200)
     bars = [{
-        "timestamp": b.timestamp,
+        "ts": b.ts,
         "open": float(b.open), "high": float(b.high),
         "low": float(b.low), "close": float(b.close),
         "volume": float(b.volume),
@@ -92,7 +91,7 @@ async def analyze_technical(
             await session.commit()
             bars_orm = await repo.get_latest(ticker, timeframe, limit=200)
             bars = [{
-                "timestamp": b.timestamp,
+                "ts": b.ts,
                 "open": float(b.open), "high": float(b.high),
                 "low": float(b.low), "close": float(b.close),
                 "volume": float(b.volume),
@@ -123,7 +122,7 @@ async def analyze_technical(
             bars = []
             for ts, bk in buckets.items():
                 bars.append({
-                    "timestamp": ts, "open": bk["open"], "high": bk["high"],
+                    "ts": ts, "open": bk["open"], "high": bk["high"],
                     "low": bk["low"], "close": bk["close"], "volume": bk["volume"],
                 })
             bars = bars[-200:]
@@ -143,13 +142,13 @@ async def analyze_technical(
     volumes = np.array([b["volume"] for b in reversed_bars], dtype=np.float64)
     current_price = float(closes[-1])
 
-    timestamps = [b["timestamp"].isoformat() if hasattr(b["timestamp"], 'isoformat') else str(b["timestamp"]) for b in reversed_bars]
+    timestamps = [b["ts"].isoformat() if hasattr(b["ts"], 'isoformat') else str(b["ts"]) for b in reversed_bars]
 
     ta: TASignal = generate_ta_signal(opens, highs, lows, closes, volumes)
 
     support, resistance = support_resistance(highs, lows, 30)
     fib_levels, fib_high, fib_low = fibonacci_levels(highs, lows, 90)
-    trade_setup = calculate_trade_setup(current_price, support, resistance, ta.indicators.get('rsi_14'))
+    trade_setup = calculate_trade_setup(ta.signal, current_price, support, resistance, ta.indicators.get('rsi_14'))
 
     narrative_prompt = (
         f"Act as a Professional daytrader and analyze {ticker} on the {timeframe} timeframe. "

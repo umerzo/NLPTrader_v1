@@ -1,9 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { newsApi, NewsArticle } from '../api/client'
 import { Card, CardContent, Input } from '../components/ui'
-import { Newspaper, ExternalLink, ChevronLeft, ChevronRight, Search, Sparkles, Loader2 } from 'lucide-react'
+import { Newspaper, ExternalLink, ChevronLeft, ChevronRight, Search } from 'lucide-react'
 
 const finbertColors: Record<string, string> = {
   positive: 'text-green-400',
@@ -17,28 +17,9 @@ const finbertBg: Record<string, string> = {
   neutral: 'bg-yellow-500/10 border-yellow-500/20',
 }
 
-const llmColors: Record<string, string> = {
-  BULLISH: 'text-green-400',
-  BEARISH: 'text-red-400',
-  NEUTRAL: 'text-blue-400',
-}
-
-const llmBg: Record<string, string> = {
-  BULLISH: 'bg-green-500/15 border-green-500/30',
-  BEARISH: 'bg-red-500/15 border-red-500/30',
-  NEUTRAL: 'bg-blue-500/15 border-blue-500/30',
-}
-
-const llmIcons: Record<string, string> = {
-  BULLISH: '\u25B2',
-  BEARISH: '\u25BC',
-  NEUTRAL: '\u25C6',
-}
-
 const TICKERS = ['All', 'BTC', 'ETH', 'XAUUSD', 'NVDA']
 
 export default function News() {
-  const queryClient = useQueryClient()
   const [page, setPage] = useState(0)
   const [pageSize] = useState(20)
   const [tickerFilter, setTickerFilter] = useState('')
@@ -51,13 +32,6 @@ export default function News() {
       limit: pageSize,
       offset: page * pageSize,
     }),
-  })
-
-  const analyzeMutation = useMutation({
-    mutationFn: () => newsApi.analyzeSentiment(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['news'] })
-    },
   })
 
   const { items, total } = result
@@ -74,25 +48,7 @@ export default function News() {
           <h1 className="text-2xl font-bold text-[var(--text-primary)]">News Feed</h1>
           <p className="text-[var(--text-secondary)] text-sm mt-1">Market news with AI sentiment analysis</p>
         </div>
-        <button
-          onClick={() => analyzeMutation.mutate()}
-          disabled={analyzeMutation.isPending}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
-        >
-          {analyzeMutation.isPending ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Sparkles className="w-4 h-4" />
-          )}
-          {analyzeMutation.isPending ? 'Analyzing...' : 'Run LLM Analysis'}
-        </button>
       </div>
-
-      {analyzeMutation.data && (
-        <div className="px-4 py-3 rounded-lg bg-green-500/10 border border-green-500/20 text-sm text-green-400">
-          LLM analysis complete: {analyzeMutation.data.analyzed} article(s) analyzed
-        </div>
-      )}
 
       {/* Filters */}
       <Card>
@@ -182,8 +138,6 @@ export default function News() {
 }
 
 function ArticleCard({ article }: { article: NewsArticle }) {
-  const llm = article.llm_analysis
-
   return (
     <a
       href={article.url}
@@ -213,33 +167,12 @@ function ArticleCard({ article }: { article: NewsArticle }) {
                 <p className="text-sm text-[var(--text-secondary)] line-clamp-2">{article.summary}</p>
               )}
               <div className="flex items-center gap-2 mt-3 flex-wrap">
-                {/* LLM-backed badge (primary) */}
-                {llm ? (
-                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold border ${llmBg[llm.label] || 'bg-[var(--bg-tertiary)]'}`}>
-                    <span className={`${llmColors[llm.label]}`}>{llmIcons[llm.label]}</span>
-                    {llm.label}
-                    <span className="opacity-70">({(llm.confidence * 100).toFixed(0)}%)</span>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs border bg-[var(--bg-tertiary)] border-[var(--border-color)] text-[var(--text-muted)]">
-                    <Sparkles className="w-3 h-3" />
-                    Run LLM Analysis
-                  </span>
-                )}
-
-                {/* FinBERT badge (secondary) */}
+                {/* FinBERT badge */}
                 {article.sentiment && (
                   <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium border ${finbertBg[article.sentiment] || 'bg-[var(--bg-tertiary)]'}`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${finbertColors[article.sentiment] || 'text-[var(--text-muted)]'}`} />
                     {article.sentiment.charAt(0).toUpperCase() + article.sentiment.slice(1)}
                     {article.sentiment_score !== null && ` (${(article.sentiment_score * 100).toFixed(0)}%)`}
-                  </span>
-                )}
-
-                {/* LLM reasoning tooltip */}
-                {llm?.reasoning && (
-                  <span className="text-xs text-[var(--text-muted)] italic max-w-xs truncate" title={llm.reasoning}>
-                    {llm.reasoning}
                   </span>
                 )}
 

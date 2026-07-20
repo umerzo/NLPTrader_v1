@@ -2,14 +2,15 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { LayoutDashboard, History, FlaskConical, BarChart2, Activity, Newspaper, Menu, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '../lib/utils'
+import { TopBar } from './TopBar'
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { name: 'History', href: '/history', icon: History },
-  { name: 'Backtest Lab', href: '/backtest', icon: FlaskConical },
-  { name: 'Analytics', href: '/analytics', icon: BarChart2 },
   { name: 'News', href: '/news', icon: Newspaper },
   { name: 'Technical Analysis', href: '/technical-analysis', icon: Activity },
+  { name: 'Analytics', href: '/analytics', icon: BarChart2 },
+  { name: 'History', href: '/history', icon: History },
+  { name: 'Backtest Lab', href: '/backtest', icon: FlaskConical, badge: 'Coming Soon' },
 ]
 
 export default function Layout() {
@@ -39,7 +40,7 @@ export default function Layout() {
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed lg:static inset-y-0 left-0 z-50 bg-[var(--bg-secondary)] border-r border-[var(--border-color)] transition-all duration-300 ease-in-out flex flex-col',
+          'fixed inset-y-0 left-0 z-50 bg-[var(--bg-secondary)] border-r border-[var(--border-color)] transition-all duration-300 ease-in-out flex flex-col',
           {
             'w-64': sidebarOpen && !isMobile,
             'w-20': !sidebarOpen && !isMobile,
@@ -90,7 +91,14 @@ export default function Layout() {
                 aria-current={isActive ? 'page' : undefined}
               >
                 <item.icon className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
-                {sidebarOpen || isMobile ? <span>{item.name}</span> : null}
+                {sidebarOpen || isMobile ? (
+                  <span className="flex-1 truncate">{item.name}</span>
+                ) : null}
+                {(sidebarOpen || isMobile) && item.badge && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary-500/10 text-primary-400 font-medium whitespace-nowrap">
+                    {item.badge}
+                  </span>
+                )}
               </NavLink>
             )
           })}
@@ -126,14 +134,15 @@ export default function Layout() {
     {/* Main Content */}
     <main
       className={cn(
-        'min-h-screen transition-all duration-300',
+        'min-h-screen transition-all duration-300 flex flex-col',
         {
           'lg:ml-64': sidebarOpen,
           'lg:ml-20': !sidebarOpen,
         }
       )}
     >
-      <div className="p-4 lg:p-6 pt-4">
+      <TopBar />
+      <div className="p-4 lg:p-6 pt-4 flex-1">
         <Outlet />
       </div>
     </main>

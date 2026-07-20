@@ -40,7 +40,7 @@ def generate_sentiment_signal(
     pos = neg = neu = 0
 
     for a in articles:
-        hours_ago = (now - a['published_at']).total_seconds() / 3600
+        hours_ago = max(0, (now - a['published_at']).total_seconds() / 3600)
         weight = 2.0 ** (-hours_ago / half_life_hours)
 
         if a['sentiment'] == 'positive':

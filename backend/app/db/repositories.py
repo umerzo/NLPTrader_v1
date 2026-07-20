@@ -1,22 +1,31 @@
-"""
-repositories.py — Data access layer. Pure async SQLAlchemy.
-No business logic, just CRUD + queries.
-"""
 from datetime import datetime, timezone, timedelta
-from typing import List, Optional, Dict, Any
+from typing import Optional
 from sqlalchemy import select, func, and_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.db.models import (
-    RawArticle, PriceOHLCV, Signal, Outcome, ModelVersion, BacktestRun
+    Ticker, RawArticle, ArticleTicker, PriceOHLCV, Signal, Outcome
 )
+
+
+class TickerRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def get(self, ticker: str) -> Optional[Ticker]:
+        stmt = select(Ticker).where(Ticker.ticker == ticker)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_all_tracked(self) -> list[Ticker]:
+        stmt = select(Ticker).where(Ticker.is_actively_tracked == True)
+        return list((await self.session.execute(stmt)).scalars())
 
 
 class ArticleRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def upsert_many(self, articles: List[dict]) -> int:
-        """Bulk upsert articles. Returns count of new rows."""
+    async def upsert_many(self, articles: list[dict]) -> int:
         from sqlalchemy.dialects.postgresql import insert
         if not articles:
             return 0
@@ -25,38 +34,70 @@ class ArticleRepository:
         result = await self.session.execute(stmt)
         return result.rowcount
 
-    async def get_unscored(self, limit: int = 100) -> List[RawArticle]:
+    async def get_unscored(self, limit: int = 100) -> list[RawArticle]:
         stmt = select(RawArticle).where(RawArticle.sentiment.is_(None)).limit(limit)
         return list((await self.session.execute(stmt)).scalars())
 
-    async def get_by_ticker_since(self, ticker: str, since: datetime, limit: int = 500) -> List[RawArticle]:
-        stmt = select(RawArticle).where(
-            RawArticle.ticker == ticker,
+    async def get_unembedded(self, limit: int = 100) -> list[RawArticle]:
+        stmt = select(RawArticle).where(RawArticle.embedding.is_(None)).limit(limit)
+        return list((await self.session.execute(stmt)).scalars())
+
+    async def get_by_ticker_since(self, ticker: str, since: datetime, limit: int = 500) -> list[RawArticle]:
+        stmt = select(RawArticle).join(
+            ArticleTicker, ArticleTicker.article_id == RawArticle.id
+        ).where(
+            ArticleTicker.ticker == ticker,
             RawArticle.published_at >= since,
             RawArticle.sentiment.is_not(None)
         ).order_by(desc(RawArticle.published_at)).limit(limit)
         return list((await self.session.execute(stmt)).scalars())
 
-    async def get_for_fundamental(self, ticker: str, cutoff: datetime, limit: int = 10) -> List[RawArticle]:
-        stmt = select(RawArticle).where(
-            RawArticle.ticker == ticker,
+    async def get_for_fundamental(self, ticker: str, cutoff: datetime, limit: int = 10) -> list[RawArticle]:
+        stmt = select(RawArticle).join(
+            ArticleTicker, ArticleTicker.article_id == RawArticle.id
+        ).where(
+            ArticleTicker.ticker == ticker,
             RawArticle.published_at >= cutoff,
             RawArticle.sentiment.is_not(None)
         ).order_by(desc(RawArticle.published_at)).limit(limit)
         return list((await self.session.execute(stmt)).scalars())
+
+    async def get_by_id(self, article_id: int) -> Optional[RawArticle]:
+        stmt = select(RawArticle).where(RawArticle.id == article_id)
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def update_embedding(self, article_id: int, embedding: list[float]):
+        stmt = select(RawArticle).where(RawArticle.id == article_id)
+        result = await self.session.execute(stmt)
+        article = result.scalar_one_or_none()
+        if article:
+            article.embedding = embedding
+
+
+class ArticleTickerRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def upsert_many(self, mappings: list[dict]) -> int:
+        from sqlalchemy.dialects.postgresql import insert
+        if not mappings:
+            return 0
+        stmt = insert(ArticleTicker).values(mappings)
+        stmt = stmt.on_conflict_do_nothing(index_elements=["article_id", "ticker"])
+        result = await self.session.execute(stmt)
+        return result.rowcount
 
 
 class PriceRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def upsert_bars(self, ticker: str, timeframe: str, bars: List[dict]) -> int:
-        """bars: list of {timestamp, open, high, low, close, volume}"""
+    async def upsert_bars(self, ticker: str, timeframe: str, bars: list[dict]) -> int:
         from sqlalchemy.dialects.postgresql import insert
         if not bars:
             return 0
         total = 0
-        chunk_size = 2000  # keep under asyncpg 32767 param limit (~14 params/row with on_conflict)
+        chunk_size = 2000
         for i in range(0, len(bars), chunk_size):
             chunk = bars[i:i + chunk_size]
             values = [
@@ -65,7 +106,7 @@ class PriceRepository:
             ]
             stmt = insert(PriceOHLCV).values(values)
             stmt = stmt.on_conflict_do_update(
-                index_elements=["ticker", "timeframe", "timestamp"],
+                index_elements=["ticker", "timeframe", "ts"],
                 set_={"open": stmt.excluded.open, "high": stmt.excluded.high,
                       "low": stmt.excluded.low, "close": stmt.excluded.close,
                       "volume": stmt.excluded.volume}
@@ -74,21 +115,21 @@ class PriceRepository:
             total += result.rowcount
         return total
 
-    async def get_latest(self, ticker: str, timeframe: str, limit: int = 500) -> List[PriceOHLCV]:
+    async def get_latest(self, ticker: str, timeframe: str, limit: int = 500) -> list[PriceOHLCV]:
         stmt = select(PriceOHLCV).where(
             PriceOHLCV.ticker == ticker,
             PriceOHLCV.timeframe == timeframe
-        ).order_by(desc(PriceOHLCV.timestamp)).limit(limit)
+        ).order_by(desc(PriceOHLCV.ts)).limit(limit)
         return list((await self.session.execute(stmt)).scalars())
 
     async def get_range(self, ticker: str, timeframe: str,
-                        start: datetime, end: datetime) -> List[PriceOHLCV]:
+                        start: datetime, end: datetime) -> list[PriceOHLCV]:
         stmt = select(PriceOHLCV).where(
             PriceOHLCV.ticker == ticker,
             PriceOHLCV.timeframe == timeframe,
-            PriceOHLCV.timestamp >= start,
-            PriceOHLCV.timestamp <= end
-        ).order_by(PriceOHLCV.timestamp)
+            PriceOHLCV.ts >= start,
+            PriceOHLCV.ts <= end
+        ).order_by(PriceOHLCV.ts)
         return list((await self.session.execute(stmt)).scalars())
 
     async def get_distinct_timeframes(self, ticker: str) -> list:
@@ -97,6 +138,14 @@ class PriceRepository:
         ).distinct()
         rows = (await self.session.execute(stmt)).all()
         return sorted([r[0] for r in rows])
+
+    async def get_latest_price(self, ticker: str) -> Optional[float]:
+        stmt = select(PriceOHLCV.close).where(
+            PriceOHLCV.ticker == ticker
+        ).order_by(desc(PriceOHLCV.ts)).limit(1)
+        result = await self.session.execute(stmt)
+        row = result.one_or_none()
+        return float(row[0]) if row else None
 
 
 class SignalRepository:
@@ -108,24 +157,41 @@ class SignalRepository:
         await self.session.flush()
         return signal
 
-    async def get_active(self, ticker: Optional[str] = None) -> List[Signal]:
+    async def get_active(self, ticker: Optional[str] = None) -> list[Signal]:
         stmt = select(Signal).where(Signal.status == "active")
         if ticker:
             stmt = stmt.where(Signal.ticker == ticker)
         stmt = stmt.order_by(desc(Signal.generated_at))
         return list((await self.session.execute(stmt)).scalars())
 
-    async def get_expired_pending_outcome(self) -> List[Signal]:
+    async def get_by_id(self, signal_id: int) -> Optional[Signal]:
+        stmt = select(Signal).where(Signal.id == signal_id)
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def get_history(self, ticker: Optional[str] = None,
+                          status: Optional[str] = None,
+                          limit: int = 100, offset: int = 0) -> list[Signal]:
+        stmt = select(Signal)
+        if ticker:
+            stmt = stmt.where(Signal.ticker == ticker)
+        if status:
+            stmt = stmt.where(Signal.status == status)
+        stmt = stmt.order_by(desc(Signal.generated_at)).limit(limit).offset(offset)
+        return list((await self.session.execute(stmt)).scalars())
+
+    async def get_expired_pending_outcome(self) -> list[Signal]:
         now = datetime.now(timezone.utc)
         stmt = select(Signal).where(
             Signal.status == "active",
-            Signal.expires_at <= now
         ).join(Outcome, Outcome.signal_id == Signal.id, isouter=True).where(Outcome.id.is_(None))
         return list((await self.session.execute(stmt)).scalars())
 
-    async def get_by_model_version(self, version: str, limit: int = 1000) -> List[Signal]:
-        stmt = select(Signal).where(Signal.model_version == version).order_by(desc(Signal.generated_at)).limit(limit)
-        return list((await self.session.execute(stmt)).scalars())
+    async def update_status(self, signal_id: int, status: str):
+        stmt = select(Signal).where(Signal.id == signal_id)
+        result = await self.session.execute(stmt)
+        signal = result.scalar_one_or_none()
+        if signal:
+            signal.status = status
 
 
 class OutcomeRepository:
@@ -137,13 +203,14 @@ class OutcomeRepository:
         await self.session.flush()
         return outcome
 
-    async def get_summary(self, ticker: Optional[str] = None) -> Dict[str, Any]:
-        """Accuracy, calibration, P&L summary."""
+    async def get_summary(self, ticker: Optional[str] = None) -> dict:
         from sqlalchemy import case
         stmt = select(
             func.count(Signal.id).label("total"),
             func.sum(case((Outcome.outcome == "correct", 1), else_=0)).label("correct"),
-            func.avg(case((Outcome.outcome == "correct", Outcome.price_change_pct))).label("avg_return"),
+            func.sum(case((Outcome.outcome == "incorrect", 1), else_=0)).label("incorrect"),
+            func.sum(case((Outcome.outcome == "neutral", 1), else_=0)).label("neutral"),
+            func.avg(case((Outcome.outcome == "correct", Outcome.return_pct))).label("avg_return"),
         ).join(Outcome, Outcome.signal_id == Signal.id)
         if ticker:
             stmt = stmt.where(Signal.ticker == ticker)
@@ -153,33 +220,10 @@ class OutcomeRepository:
         correct = row.correct or 0
         return {
             "total_signals": total,
+            "correct": correct,
+            "incorrect": row.incorrect or 0,
+            "neutral": row.neutral or 0,
             "accuracy": round(correct / total * 100, 1) if total else 0,
             "avg_return_pct": round(float(row.avg_return or 0), 2),
         }
 
-
-class ModelVersionRepository:
-    def __init__(self, session: AsyncSession):
-        self.session = session
-
-    async def create(self, version: str, config: dict, description: str = "", parent: str = None) -> ModelVersion:
-        mv = ModelVersion(version=version, config=config, description=description, parent_version=parent)
-        self.session.add(mv)
-        await self.session.flush()
-        return mv
-
-    async def get_active(self) -> Optional[ModelVersion]:
-        stmt = select(ModelVersion).where(ModelVersion.is_active == True)
-        return (await self.session.execute(stmt)).scalar_one_or_none()
-
-    async def get_by_version(self, version: str) -> Optional[ModelVersion]:
-        stmt = select(ModelVersion).where(ModelVersion.version == version)
-        return (await self.session.execute(stmt)).scalar_one_or_none()
-
-    async def set_active(self, version: str):
-        await self.session.execute(
-            ModelVersion.__table__.update().values(is_active=False).where(ModelVersion.is_active == True)
-        )
-        await self.session.execute(
-            ModelVersion.__table__.update().values(is_active=True).where(ModelVersion.version == version)
-        )

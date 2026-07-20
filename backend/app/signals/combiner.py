@@ -1,35 +1,32 @@
-"""
-combiner.py — Ensemble signal combination logic.
-
-Pure functions: SubSignal + SubSignal + SubSignal → CombinedSignal.
-No I/O, fully testable.
-"""
+import logging
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class SubSignal:
-    source: str           # 'ta' | 'sentiment' | 'fundamental'
-    confidence: int       # 0-100
-    signal: str           # 'buy' | 'sell' | 'hold'
-    details: dict         # Engine-specific details
+    source: str
+    confidence: int
+    signal: str
+    details: dict
 
 
 @dataclass
 class CombinedSignal:
-    signal: str                   # 'buy' | 'sell' | 'hold'
-    confidence: int               # 0-100
-    reasoning: str                # Human-readable synthesis
-    regime: str                   # Market regime context
-    prediction_horizon: str       # e.g., "24h"
-    model_version: str            # e.g., "v1.0-ensemble"
+    signal: str
+    confidence: int
+    reasoning: str
+    regime: str
+    model_version: str
     entry_price: Optional[float] = None
     stop_loss: Optional[float] = None
     take_profit_1: Optional[float] = None
     take_profit_2: Optional[float] = None
     take_profit_3: Optional[float] = None
+    conflict_penalty_applied: bool = False
 
 
 class SignalCombiner:
@@ -49,63 +46,86 @@ class SignalCombiner:
         current_price: float,
         regime: str = 'unknown',
     ) -> CombinedSignal:
-        """Main combination logic."""
         sub_signals = [ta, sentiment, fundamental]
-
-        # 1. Vote counting
         signals = [s.signal for s in sub_signals]
         buy_votes = signals.count('buy')
         sell_votes = signals.count('sell')
 
-        # 2. Determine base signal from agreement
-        if buy_votes >= 2 and sell_votes == 0:
-            base_signal = 'buy'
-            agreement = buy_votes / 3
-        elif sell_votes >= 2 and buy_votes == 0:
-            base_signal = 'sell'
-            agreement = sell_votes / 3
-        else:
-            base_signal = 'hold'
-            agreement = 0.33
+        base_signal, agreement_factor, conflict_penalty_applies = self._decision_table(buy_votes, sell_votes)
 
-        # 3. Weighted confidence
-        weighted_conf = sum(
-            s.confidence * self.weights[s.source]
-            for s in sub_signals
-        ) * agreement
-
-        # 4. Conflict penalty
-        if buy_votes > 0 and sell_votes > 0:
+        weighted_conf = sum(s.confidence * self.weights[s.source] for s in sub_signals)
+        weighted_conf *= agreement_factor
+        if conflict_penalty_applies:
             weighted_conf *= self.conflict_penalty
-
-        # 5. Regime adjustment
         regime_mult = self._regime_multiplier(regime, base_signal)
         weighted_conf *= regime_mult
-
         confidence = max(5, min(95, int(weighted_conf)))
 
-        # 6. Get levels from TA (only valid for directional signals)
-        levels = ta.details.get('levels', {}) if ta.signal in ('buy', 'sell') else {}
+        levels = self._get_levels(ta, base_signal, current_price)
 
-        # 7. Synthesize reasoning
-        reasoning = self._synthesize(sub_signals, base_signal, confidence, regime)
+        reasoning = self._synthesize(sub_signals, base_signal, confidence, regime, buy_votes, sell_votes, conflict_penalty_applies)
 
         return CombinedSignal(
             signal=base_signal,
             confidence=confidence,
             reasoning=reasoning,
             regime=regime,
-            prediction_horizon="24h",
-            model_version="v1.0-ensemble",
+            model_version="v1",
             entry_price=levels.get('entry'),
             stop_loss=levels.get('sl'),
             take_profit_1=levels.get('tp1'),
             take_profit_2=levels.get('tp2'),
             take_profit_3=levels.get('tp3'),
+            conflict_penalty_applied=conflict_penalty_applies,
         )
 
+    def _decision_table(self, buy_votes: int, sell_votes: int) -> tuple:
+        match (buy_votes, sell_votes):
+            case (3, 0):
+                return ('buy', 1.0, False)
+            case (0, 3):
+                return ('sell', 1.0, False)
+            case (2, 0):
+                return ('buy', 2/3, False)
+            case (0, 2):
+                return ('sell', 2/3, False)
+            case (2, 1):
+                return ('buy', 2/3, True)
+            case (1, 2):
+                return ('sell', 2/3, True)
+            case _:
+                return ('hold', 0.0, False)
+
+    def _get_levels(self, ta: SubSignal, base_signal: str, current_price: float) -> dict:
+        levels: dict = {'entry': None, 'sl': None, 'tp1': None, 'tp2': None, 'tp3': None}
+        if base_signal not in ('buy', 'sell'):
+            return levels
+        if ta.signal != base_signal:
+            logger.info("TA disagreed (%s) with final signal (%s) — omitting TA levels", ta.signal, base_signal)
+            return levels
+
+        ta_levels = ta.details.get('levels', {})
+        entry = ta_levels.get('entry')
+        sl = ta_levels.get('sl')
+        if entry is None or sl is None:
+            return levels
+
+        if base_signal == 'buy' and sl >= entry:
+            logger.warning("Buy setup has SL (%.2f) >= entry (%.2f) — omitting levels", sl, entry)
+            return levels
+        if base_signal == 'sell' and sl <= entry:
+            logger.warning("Sell setup has SL (%.2f) <= entry (%.2f) — omitting levels", sl, entry)
+            return levels
+
+        return {
+            'entry': entry,
+            'sl': sl,
+            'tp1': ta_levels.get('tp1'),
+            'tp2': ta_levels.get('tp2'),
+            'tp3': ta_levels.get('tp3'),
+        }
+
     def _regime_multiplier(self, regime: str, signal: str) -> float:
-        """Adjust confidence based on market regime."""
         if regime == 'bull' and signal == 'buy':
             return 1.1
         elif regime == 'bear' and signal == 'sell':
@@ -120,39 +140,20 @@ class SignalCombiner:
             return 0.5
         return 1.0
 
-    def _synthesize(
-        self,
-        sub_signals: List[SubSignal],
-        final_signal: str,
-        confidence: int,
-        regime: str,
-    ) -> str:
-        """Build human-readable reasoning."""
+    def _synthesize(self, sub_signals, final_signal, confidence, regime, buy_votes, sell_votes, conflict):
         parts = []
-
-        # TA reasoning
         ta = next(s for s in sub_signals if s.source == 'ta')
         if ta.details.get('reasoning'):
             parts.append(f"Technical: {ta.details['reasoning']}")
-
-        # Sentiment summary
         sent = next(s for s in sub_signals if s.source == 'sentiment')
         art_count = sent.details.get('article_count', 0)
         net = sent.details.get('net_score', 0)
         parts.append(f"Sentiment: {art_count} articles (net {net:+.2f})")
-
-        # Fundamental narrative
         fund = next(s for s in sub_signals if s.source == 'fundamental')
         if fund.details.get('narrative'):
             parts.append(f"Fundamental: {fund.details['narrative']}")
-
-        # Conflict note
-        signals = [s.signal for s in sub_signals]
-        if signals.count('buy') > 0 and signals.count('sell') > 0:
-            parts.append("⚠️ Sub-signals conflict — confidence reduced")
-
-        # Regime note
+        if buy_votes > 0 and sell_votes > 0:
+            parts.append(f"Vote split: {buy_votes} buy / {sell_votes} sell — conflict penalty applied")
         if regime != 'unknown':
             parts.append(f"Regime: {regime}")
-
         return " | ".join(parts)

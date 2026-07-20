@@ -12,7 +12,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.db.models import PriceOHLCV, RawArticle, Signal, BacktestRun
+from backend.app.db.models import PriceOHLCV, RawArticle, Signal
 from backend.app.db.repositories import PriceRepository, ArticleRepository
 from backend.app.signals.ta_engine import generate_ta_signal, TASignal
 from backend.app.signals.sentiment_engine import generate_sentiment_signal, SentimentSignal
@@ -60,7 +60,7 @@ class BacktestEngine:
         self.settings = get_settings()
         self.prices = PriceRepository(session)
         self.articles = ArticleRepository(session)
-        self.fundamental = FundamentalEngine()
+        self.fundamental = FundamentalEngine(session=session)
         self.combiner = SignalCombiner()
 
     async def run(self, config: dict) -> BacktestResult:

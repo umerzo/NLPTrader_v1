@@ -2,24 +2,27 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { taApi, TAAnalysis } from '../api/client'
 import TradingViewChart from '../components/TradingViewChart'
-import { Card, CardContent, CardHeader, CardTitle, Button } from '../components/ui'
+import { Card, CardContent, CardHeader, CardTitle, Button, Input } from '../components/ui'
 import { Loader2, TrendingUp, AlertTriangle, Activity, BarChart3, Zap, Target } from 'lucide-react'
 
-const TICKERS = ['BTC', 'ETH', 'XAUUSD', 'NVDA']
 const TIMEFRAMES = ['15m', '1h', '4h', '1d']
 
 export default function TechnicalAnalysis() {
-  const [ticker, setTicker] = useState('BTC')
+  const [ticker, setTicker] = useState('')
   const [timeframe, setTimeframe] = useState('1h')
   const [shouldAnalyze, setShouldAnalyze] = useState(false)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['ta-analysis', ticker, timeframe],
     queryFn: () => taApi.analyze(ticker, timeframe),
-    enabled: shouldAnalyze,
+    enabled: shouldAnalyze && ticker.trim().length > 0,
+    refetchInterval: false,
   })
 
-  const handleAnalyze = () => setShouldAnalyze(true)
+  const handleAnalyze = () => {
+    if (ticker.trim().length === 0) return
+    setShouldAnalyze(true)
+  }
 
   return (
     <div className="space-y-6">
@@ -36,21 +39,18 @@ export default function TechnicalAnalysis() {
           <div className="flex flex-wrap items-end gap-4">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--text-secondary)]">Ticker</label>
-              <div className="flex gap-2">
-                {TICKERS.map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => { setTicker(t); setShouldAnalyze(false) }}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                      ticker === t
-                        ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/25'
-                        : 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:bg-[var(--border-color)]'
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
+              <Input
+                value={ticker}
+                onChange={(e) => {
+                  setTicker(e.target.value.toUpperCase())
+                  setShouldAnalyze(false)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleAnalyze()
+                }}
+                placeholder="e.g. AAPL, BTC, TSLA"
+                className="w-40"
+              />
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--text-secondary)]">Timeframe</label>
@@ -72,7 +72,7 @@ export default function TechnicalAnalysis() {
             </div>
             <Button
               onClick={handleAnalyze}
-              disabled={isLoading}
+              disabled={isLoading || ticker.trim().length === 0}
               className="px-8"
               size="lg"
             >
@@ -91,7 +91,7 @@ export default function TechnicalAnalysis() {
           <CardContent className="text-center">
             <Activity className="w-16 h-16 mx-auto text-[var(--text-secondary)] mb-4 opacity-50" />
             <h2 className="text-xl font-semibold text-[var(--text-primary)] mb-2">Ready to Analyze</h2>
-            <p className="text-[var(--text-secondary)]">Select a ticker and timeframe, then click <strong>Run Analysis</strong></p>
+            <p className="text-[var(--text-secondary)]">Enter a ticker and timeframe, then click <strong>Run Analysis</strong></p>
           </CardContent>
         </Card>
       )}

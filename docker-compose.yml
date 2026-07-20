@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: nlptrader-postgres
     environment:
       POSTGRES_USER: postgres
@@ -16,17 +16,5 @@ services:
       timeout: 5s
       retries: 5
 
-  chromadb:
-    image: chromadb/chroma:0.5.5
-    container_name: nlptrader-chromadb
-    ports:
-      - "8001:8000"
-    volumes:
-      - chroma_data:/chroma
-    environment:
-      - CHROMA_SERVER_HOST=0.0.0.0
-      - CHROMA_SERVER_HTTP_PORT=8000
-
 volumes:
   postgres_data:
-  chroma_data:

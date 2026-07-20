@@ -15,18 +15,24 @@ interface SignalCardProps {
 }
 
 function sentimentLabel(signal: string, details?: any): string {
-  if (details?.net_score !== undefined) {
-    if (details.net_score > 0.15) return 'Bullish'
-    if (details.net_score < -0.15) return 'Bearish'
-    return 'Neutral'
+  const parts: string[] = []
+  if (details?.article_count !== undefined) {
+    parts.push(`${details.article_count} articles`)
   }
-  return signal === 'buy' ? 'Bullish' : signal === 'sell' ? 'Bearish' : 'Neutral'
+  if (details?.net_score !== undefined) {
+    parts.push(`net ${details.net_score >= 0 ? '+' : ''}${details.net_score.toFixed(2)}`)
+  }
+  if (details?.positive_count !== undefined || details?.negative_count !== undefined) {
+    const p = details.positive_count ?? 0
+    const n = details.negative_count ?? 0
+    parts.push(`${p} pos / ${n} neg`)
+  }
+  return parts.length > 0 ? parts.join(' · ') : (signal === 'buy' ? 'Bullish' : signal === 'sell' ? 'Bearish' : 'Neutral')
 }
 
 function fundamentalBrief(details?: any): string {
   if (details?.narrative) {
-    const first = details.narrative.split('.')[0]
-    return first.length > 80 ? first.slice(0, 77) + '...' : first
+    return details.narrative
   }
   return ''
 }
@@ -39,8 +45,8 @@ export function SignalCard({ signal }: SignalCardProps) {
 
   return (
     <Card className={`${colors.border} ${colors.bg} transition-all ${expanded ? 'shadow-lg' : ''}`}>
-      {/* Header */}
-      <div className="p-4">
+      {/* Header (clickable) */}
+      <div className="p-4 cursor-pointer" onClick={() => setExpanded(!expanded)}>
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-lg bg-gradient-to-br from-primary-500 to-primary-700">
@@ -54,9 +60,12 @@ export function SignalCard({ signal }: SignalCardProps) {
             </div>
           </div>
 
-          <div className="text-right">
-            <div className="text-2xl font-bold text-[var(--text-primary)]">{signal.confidence}%</div>
-            <div className="text-xs text-[var(--text-secondary)]">Confidence</div>
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <div className="text-2xl font-bold text-[var(--text-primary)]">{signal.confidence}%</div>
+              <div className="text-xs text-[var(--text-secondary)]">Confidence</div>
+            </div>
+            {expanded ? <ChevronUp className="w-5 h-5 text-[var(--text-secondary)]" /> : <ChevronDown className="w-5 h-5 text-[var(--text-secondary)]" />}
           </div>
         </div>
 
@@ -107,7 +116,7 @@ export function SignalCard({ signal }: SignalCardProps) {
       </div>
 
       {/* Expandable Details */}
-      <div className={`overflow-hidden transition-all duration-300 ${expanded ? 'max-h-96' : 'max-h-0'}`}>
+      <div className={`overflow-hidden transition-all duration-300 ${expanded ? 'max-h-[5000px]' : 'max-h-0'}`}>
         <div className="border-t border-[var(--border-color)] p-4 space-y-4">
           {/* Reasoning */}
           <div>
@@ -116,10 +125,10 @@ export function SignalCard({ signal }: SignalCardProps) {
           </div>
 
           {/* Sub-signal details */}
-          <div className="grid grid-cols-3 gap-3">
-            <SubSignalDetail title="Technical" signal={signal.sub_signals.ta} icon={<TrendingUp className="w-4 h-4" />} />
-            <SubSignalDetail title="Sentiment" signal={signal.sub_signals.sentiment} icon={<AlertTriangle className="w-4 h-4" />} />
-            <SubSignalDetail title="Fundamental" signal={signal.sub_signals.fundamental} icon={<Shield className="w-4 h-4" />} />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <SubSignalDetail title="Technical" signal={signal.sub_signals.ta} details={signal.sub_signals.ta.details} icon={<TrendingUp className="w-4 h-4" />} />
+            <SubSignalDetail title="Sentiment" signal={signal.sub_signals.sentiment} details={signal.sub_signals.sentiment.details} icon={<AlertTriangle className="w-4 h-4" />} />
+            <SubSignalDetail title="Fundamental" signal={signal.sub_signals.fundamental} details={signal.sub_signals.fundamental.details} icon={<Shield className="w-4 h-4" />} />
           </div>
 
           {/* Outcome (if available) */}
@@ -165,7 +174,7 @@ function SubSignalBadge({ label, signal, explainer }: { label: string; signal: {
         <span className="text-xs text-[var(--text-secondary)]">{signal.confidence}%</span>
       </div>
       {explainer && (
-        <p className="text-[10px] text-[var(--text-muted)] mt-1 leading-tight max-w-[120px] mx-auto truncate">{explainer}</p>
+        <p className="text-[11px] text-[var(--text-muted)] mt-1 leading-snug text-left px-1 line-clamp-3">{explainer}</p>
       )}
     </div>
   )
@@ -187,19 +196,44 @@ function LevelBadge({ label, value, color = 'blue' }: { label: string; value: nu
   )
 }
 
-function SubSignalDetail({ title, signal, icon }: { title: string; signal: { signal: string; confidence: number }; icon: React.ReactNode }) {
+function SubSignalDetail({ title, signal, details, icon }: { title: string; signal: { signal: string; confidence: number }; details?: any; icon: React.ReactNode }) {
+  const detailText = details?.narrative || details?.reasoning || ''
+  const isSentiment = title === 'Sentiment'
   return (
     <div className="p-3 bg-[var(--bg-secondary)] rounded-lg">
-      <div className="flex items-center gap-2 mb-1">
+      <div className="flex items-center gap-2 mb-2">
         {icon}
         <span className="font-medium text-sm">{title}</span>
-      </div>
-      <div className="flex items-center justify-between">
-        <Badge variant={signal.signal === 'buy' ? 'success' : signal.signal === 'sell' ? 'destructive' : 'secondary'} className="text-xs">
+        <Badge variant={signal.signal === 'buy' ? 'success' : signal.signal === 'sell' ? 'destructive' : 'secondary'} className="text-xs ml-auto">
           {signal.signal.toUpperCase()}
         </Badge>
         <span className="text-xs text-[var(--text-secondary)]">{signal.confidence}%</span>
       </div>
+      {detailText && (
+        <p className="text-xs text-[var(--text-muted)] leading-relaxed">{detailText}</p>
+      )}
+      {isSentiment && details?.article_count !== undefined && (
+        <div className="space-y-2 mt-2">
+          <div className="flex flex-wrap gap-2 text-xs text-[var(--text-muted)]">
+            <span className="px-1.5 py-0.5 rounded bg-green-500/10 text-green-500">{details.positive_count ?? 0} pos</span>
+            <span className="px-1.5 py-0.5 rounded bg-red-500/10 text-red-500">{details.negative_count ?? 0} neg</span>
+            <span className="px-1.5 py-0.5 rounded bg-gray-500/10 text-gray-400">{details.neutral_count ?? 0} neu</span>
+            <span className="text-[var(--text-secondary)]">net {details.net_score >= 0 ? '+' : ''}{details.net_score?.toFixed(2)}</span>
+          </div>
+          {details.top_articles && details.top_articles.length > 0 && (
+            <div className="space-y-1">
+              {details.top_articles.slice(0, 3).map((a: any, i: number) => (
+                <div key={i} className="text-[11px] text-[var(--text-muted)] leading-snug flex items-start gap-1">
+                  <span className={`shrink-0 mt-0.5 ${a.sentiment === 'positive' ? 'text-green-500' : a.sentiment === 'negative' ? 'text-red-500' : 'text-gray-400'}`}>
+                    {a.sentiment === 'positive' ? '▲' : a.sentiment === 'negative' ? '▼' : '●'}
+                  </span>
+                  <span className="line-clamp-2">{a.headline}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

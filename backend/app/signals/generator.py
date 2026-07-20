@@ -26,14 +26,14 @@ class SignalGenerator:
         self.prices = PriceRepository(session)
         self.signals = SignalRepository(session)
         self.settings = get_settings()
-        self.fundamental = FundamentalEngine()
+        self.fundamental = FundamentalEngine(session=session)
         self.combiner = SignalCombiner()
 
     async def generate_for_ticker(self, ticker: str) -> Optional[SignalModel]:
         """Full pipeline for one ticker."""
-        # 1. Fetch price data (1h timeframe for TA)
-        price_bars = await self.prices.get_latest(ticker, "1h", limit=200)
-        if len(price_bars) < 50:
+        # 1. Fetch price data (1d timeframe for TA)
+        price_bars = await self.prices.get_latest(ticker, "1d", limit=200)
+        if len(price_bars) < 30:
             return None
 
         # Convert to numpy arrays (chronological: oldest first)
@@ -46,7 +46,7 @@ class SignalGenerator:
 
         # 2. Generate sub-signals
         ta_result: TASignal = generate_ta_signal(opens, highs, lows, closes, volumes)
-        ta_sub = SubSignal('ta', ta_result.confidence, 'ta', {
+        ta_sub = SubSignal('ta', ta_result.confidence, ta_result.signal, {
             'reasoning': ta_result.reasoning,
             'levels': ta_result.levels,
             'indicators': ta_result.indicators,
@@ -65,16 +65,22 @@ class SignalGenerator:
             half_life_hours=self.settings.SENTIMENT_HALF_LIFE_HOURS,
             min_articles=self.settings.MIN_ARTICLES_FOR_SENTIMENT,
         )
-        sent_sub = SubSignal('sentiment', sent_result.confidence, 'sentiment', {
+        top_articles = [
+            {**a, 'published_at': a['published_at'].isoformat() if hasattr(a['published_at'], 'isoformat') else a['published_at']}
+            for a in sent_result.top_articles
+        ]
+        sent_sub = SubSignal('sentiment', sent_result.confidence, sent_result.signal, {
             'article_count': sent_result.article_count,
             'net_score': sent_result.net_score,
             'positive_count': sent_result.positive_count,
             'negative_count': sent_result.negative_count,
+            'neutral_count': sent_result.neutral_count,
+            'top_articles': top_articles,
         })
 
         # Fundamental (RAG + LLM)
         fund_result: FundamentalSignal = await self.fundamental.generate_signal(ticker, current_price)
-        fund_sub = SubSignal('fundamental', fund_result.confidence, 'fundamental', {
+        fund_sub = SubSignal('fundamental', fund_result.confidence, fund_result.signal, {
             'narrative': fund_result.narrative,
             'key_themes': fund_result.key_themes,
             'risks': fund_result.risks,
@@ -88,29 +94,35 @@ class SignalGenerator:
             regime=ta_result.regime,
         )
 
-        # 4. Persist
+        # 4. Check existing active signals for this ticker
+        old_active = await self.signals.get_active(ticker)
+
+        # If existing signal has same direction, keep it — skip creation
+        for old in old_active:
+            if old.signal == combined.signal:
+                return None
+
+        # Direction changed (e.g. buy→sell): supersede old, create new
+        for old in old_active:
+            old.status = "superseded"
+        await self.session.flush()
+
+        # 5. Persist new signal
         signal_row = SignalModel(
             ticker=ticker,
-            model_version=combined.model_version,
-            ta_signal=ta_result.signal,
-            ta_confidence=ta_result.confidence,
-            ta_details=ta_sub.details,
-            sentiment_signal=sent_result.signal,
-            sentiment_confidence=sent_result.confidence,
-            sentiment_details=sent_sub.details,
-            fundamental_signal=fund_result.signal,
-            fundamental_confidence=fund_result.confidence,
-            fundamental_details=fund_sub.details,
-            combined_signal=combined.signal,
-            combined_confidence=combined.confidence,
-            combined_reasoning=combined.reasoning,
-            prediction_horizon=combined.prediction_horizon,
+            signal=combined.signal,
+            confidence=combined.confidence,
+            ta_subsignal={'signal': ta_sub.signal, 'confidence': ta_sub.confidence, **ta_sub.details},
+            sentiment_subsignal={'signal': sent_sub.signal, 'confidence': sent_sub.confidence, **sent_sub.details},
+            fundamental_subsignal={'signal': fund_sub.signal, 'confidence': fund_sub.confidence, **fund_sub.details},
+            combiner_reasoning=combined.reasoning,
             entry_price=combined.entry_price,
             stop_loss=combined.stop_loss,
             take_profit_1=combined.take_profit_1,
             take_profit_2=combined.take_profit_2,
             take_profit_3=combined.take_profit_3,
             regime=combined.regime,
+            model_version=combined.model_version,
             expires_at=datetime.now(timezone.utc) + timedelta(hours=self.settings.PREDICTION_HORIZON_HOURS),
         )
         self.session.add(signal_row)

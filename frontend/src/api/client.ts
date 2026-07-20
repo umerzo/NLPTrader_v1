@@ -162,7 +162,7 @@ const PREFIX = '/api'
 export const signalsApi = {
   getActive: (ticker?: string) => api.get<Signal[]>(`${PREFIX}/signals/active`, { params: { ticker } }).then(r => r.data),
   getHistory: (params: { ticker?: string; limit?: number; offset?: number } = {}) => api.get<PaginatedSignals>(`${PREFIX}/signals/history`, { params }).then(r => r.data),
-  getStats: (ticker?: string) => api.get<SignalStats>(`${PREFIX}/signals/stats`, { params: { ticker } }).then(r => r.data),
+  getStats: (ticker?: string) => api.get<SignalStats>(`${PREFIX}/outcomes/summary`, { params: { ticker } }).then(r => r.data),
   generate: (ticker: string) => api.post<Signal>(`${PREFIX}/signals/generate/${ticker}`).then(r => r.data),
   refreshAll: () => api.post<{ status: string; ingestion: any; signals_generated: string[] }>(`${PREFIX}/signals/refresh`).then(r => r.data),
 }
@@ -271,9 +271,34 @@ export const newsApi = {
     api.post<{ analyzed: number; results: LLMAnalysisResult[] }>(`${PREFIX}/news/analyze-sentiment`, null, { params: { limit } }).then(r => r.data),
 }
 
+export type TickerSearchResult =
+  | {
+      found: true
+      ticker: string
+      name: string | null
+      exchange: string | null
+      sector: string | null
+      industry: string | null
+      asset_type: string | null
+      current_price: number | null
+      currency: string | null
+    }
+  | {
+      found: false
+      query: string
+      message: string
+    }
+
+export const tickersApi = {
+  search: (q: string) =>
+    api.get<TickerSearchResult>(`${PREFIX}/tickers/search`, { params: { q } }).then(r => r.data),
+  track: (ticker: string) =>
+    api.post<{ status: string }>(`${PREFIX}/tickers/${ticker}/track`).then(r => r.data),
+}
+
 export const taApi = {
   analyze: (ticker: string, timeframe: string = '1h') =>
-    api.get<TAAnalysis>(`${PREFIX}/ta/analyze`, { params: { ticker, timeframe } }).then(r => r.data),
+    api.get<TAAnalysis>(`${PREFIX}/ta/${ticker}`, { params: { timeframe } }).then(r => r.data),
 }
 
 export const healthApi = {

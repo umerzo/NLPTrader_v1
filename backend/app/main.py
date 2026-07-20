@@ -6,16 +6,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.api.routes import signals, backtest, health, ta, news, prices
+from backend.app.api.routes import signals, backtest, health, ta, news, tickers, outcomes
 from backend.app.db.session import init_db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     await init_db()
     yield
-    # Shutdown (cleanup if needed)
 
 
 app = FastAPI(
@@ -25,7 +23,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS for local frontend dev
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
@@ -34,13 +31,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
 app.include_router(health.router)
 app.include_router(signals.router)
 app.include_router(backtest.router)
 app.include_router(ta.router)
 app.include_router(news.router)
-app.include_router(prices.router)
+app.include_router(tickers.router)
+app.include_router(outcomes.router)
 
 
 @app.get("/")
@@ -49,5 +46,5 @@ async def root():
         "service": "NLPTrader API",
         "version": "1.0.0",
         "docs": "/docs",
-        "health": "/health/full",
+        "health": "/api/health",
     }

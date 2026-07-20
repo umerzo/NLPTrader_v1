@@ -9,6 +9,7 @@ __pycache__/
 
 # Environment secrets
 .env
+.streamlit/secrets.toml
 
 # Jupyter
 .ipynb_checkpoints/
@@ -16,32 +17,10 @@ __pycache__/
 # VS Code
 .vscode/
 
-# Python
-.venv/
-venv/
-env/
-__pycache__/
-
 # Node
 node_modules/
 .next/
 dist/
 
-# Secrets
-.env
-
-
-
-
-
-# Secrets — NEVER commit these
-.env
-.streamlit/secrets.toml
-
-# Python junk
-venv/
-__pycache__/
-*.pyc
-
-# NOTE: nlptrader.db is intentionally NOT ignored — we ship the data snapshot so the
-# deployed (display-only) app has something to show. It contains no secrets.
+# Database (SQLite — not used in production, PostgreSQL in Docker)
+nlptrader.db

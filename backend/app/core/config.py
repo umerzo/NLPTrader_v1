@@ -1,10 +1,6 @@
-"""
-config.py — Central configuration using Pydantic Settings v2.
-All secrets from .env, runtime params from DB (model_versions table).
-"""
 from functools import lru_cache
 from typing import List
-from pydantic import Field, field_validator
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,8 +15,6 @@ class Settings(BaseSettings):
     postgres_db: str = "nlptrader"
     db_echo: bool = False
 
-    CHROMA_PERSIST_DIR: str = "./data/chromadb"
-
     # External APIs
     FINNHUB_API_KEY: str = Field(default="", validation_alias="FINNHUB_API_KEY")
     LLM_API_KEY: str = Field(default="", validation_alias="LLM_API_KEY")
@@ -28,7 +22,7 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "llama-3.3-70b-versatile"
     GEMINI_API_KEY: str = Field(default="", validation_alias="GEMINI_API_KEY")
 
-    # Tickers - parse as string from env, then split
+    # Tickers
     TICKERS_STR: str = Field(default="BTC,ETH,XAUUSD,NVDA", validation_alias="TICKERS")
 
     @property
@@ -37,9 +31,10 @@ class Settings(BaseSettings):
 
     # Ingestion
     LOOKBACK_HOURS: int = 24
+    LOOKBACK_DAYS: int = 3
     BATCH_LIMIT: int = 100
 
-    # Price data timeframes to auto-ingest
+    # Price data timeframes
     PRICE_TIMEFRAMES: list = ["15m", "1h", "4h", "1d"]
 
     # Signal generation
@@ -47,7 +42,7 @@ class Settings(BaseSettings):
     SENTIMENT_HALF_LIFE_HOURS: float = 48.0
     MIN_ARTICLES_FOR_SENTIMENT: int = 3
 
-    # Ensemble weights (sum to 1.0)
+    # Ensemble weights
     TA_WEIGHT: float = 0.4
     SENTIMENT_WEIGHT: float = 0.3
     FUNDAMENTAL_WEIGHT: float = 0.3
@@ -55,8 +50,8 @@ class Settings(BaseSettings):
     # Conflict penalty
     CONFLICT_PENALTY: float = 0.5
 
-    # ChromaDB / RAG
-    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
+    # Embedding / RAG
+    EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
     RAG_TOP_K: int = 10
     RAG_LOOKBACK_DAYS: int = 7
 

@@ -1,67 +1,32 @@
-"""
-fundamental_engine.py — RAG + LLM Fundamental Analysis.
-
-1. Ingest articles into ChromaDB (vector store) at ingestion time
-2. At signal time: retrieve relevant articles → LLM synthesis → FundamentalSignal
-"""
-import asyncio
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone, timedelta
+from typing import Optional
+from datetime import datetime, timezone
 import json
-
-import chromadb
-from chromadb.config import Settings as ChromaSettings
-from sentence_transformers import SentenceTransformer
+import logging
 
 from backend.app.core.config import get_settings
 from backend.app.llm.client import LLMClient
+from backend.app.signals.embedder import retrieve_relevant_articles
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class FundamentalSignal:
-    signal: str                 # 'buy' | 'sell' | 'hold'
-    confidence: int             # 0-100
-    narrative: str              # 2-3 sentence summary
-    key_themes: List[str]       # Positive drivers
-    risks: List[str]            # Negative risks
-    catalyst: Optional[str]     # Near-term event
+    signal: str
+    confidence: int
+    narrative: str
+    key_themes: list[str]
+    risks: list[str]
+    catalyst: Optional[str]
     articles_used: int
 
 
 class FundamentalEngine:
-    def __init__(self):
+    def __init__(self, session=None):
         self.settings = get_settings()
-        self.client = chromadb.PersistentClient(
-            path=self.settings.CHROMA_PERSIST_DIR,
-            settings=ChromaSettings(anonymized_telemetry=False)
-        )
-        self.collection = self.client.get_or_create_collection(
-            name="news_articles",
-            metadata={"hnsw:space": "cosine"}
-        )
-        self.embedder = SentenceTransformer(self.settings.EMBEDDING_MODEL)
         self.llm = LLMClient()
-
-    async def ingest_article(self, article: Dict[str, Any]) -> None:
-        """Call during ingestion pipeline. Adds article to ChromaDB."""
-        text = f"{article['headline']}. {article.get('summary', '')}"
-
-        def _sync():
-            embedding = self.embedder.encode(text).tolist()
-            self.collection.add(
-                ids=[article['url']],
-                embeddings=[embedding],
-                metadatas=[{
-                    "ticker": article['ticker'],
-                    "source": article['source'],
-                    "published_at": article['published_at'].timestamp(),
-                    "headline": article['headline'][:200],
-                }],
-                documents=[text]
-            )
-
-        await asyncio.to_thread(_sync)
+        self._session = session
 
     async def generate_signal(
         self,
@@ -72,38 +37,37 @@ class FundamentalEngine:
         if lookback_days is None:
             lookback_days = self.settings.RAG_LOOKBACK_DAYS
 
-        cutoff_ts = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).timestamp()
+        if self._session is None:
+            return FundamentalSignal(
+                signal='hold', confidence=5,
+                narrative="Database session not available for fundamental analysis.",
+                key_themes=[], risks=[], catalyst=None, articles_used=0
+            )
 
-        # Build query
         query_text = f"{ticker} price action news fundamentals earnings guidance outlook"
-        query_emb = self.embedder.encode(query_text).tolist()
-
-        # RAG RETRIEVAL
-        results = self.collection.query(
-            query_embeddings=[query_emb],
-            n_results=self.settings.RAG_TOP_K,
-            where={"$and": [
-                {"ticker": ticker},
-                {"published_at": {"$gte": cutoff_ts}}
-            ]},
+        articles = await retrieve_relevant_articles(
+            session=self._session,
+            ticker=ticker,
+            query_text=query_text,
+            top_k=self.settings.RAG_TOP_K,
+            lookback_days=lookback_days,
         )
 
-        if not results['documents'][0]:
+        if not articles:
             return FundamentalSignal(
                 signal='hold', confidence=10,
                 narrative="Insufficient recent news for fundamental assessment.",
                 key_themes=[], risks=[], catalyst=None, articles_used=0
             )
 
-        # Prepare context for LLM
-        articles_context = []
-        for meta, doc in zip(results['metadatas'][0], results['documents'][0]):
-            articles_context.append(
-                f"[{meta['published_at']}] {meta['headline']}: {doc}"
-            )
-        context = "\n\n".join(articles_context)
+        context_parts = []
+        for a in articles:
+            text = a.get("headline", "")
+            if a.get("summary"):
+                text += ". " + a["summary"]
+            context_parts.append(f"[{a['published_at']}] {text}")
+        context = "\n\n".join(context_parts)
 
-        # LLM SYNTHESIS (RAG-AUGMENTED GENERATION)
         prompt = f"""You are a senior fundamental analyst. Analyze {ticker} at ${current_price:.2f}.
 
 Recent relevant news (retrieved via RAG):
@@ -124,11 +88,12 @@ Be honest. If unclear, return neutral with low confidence."""
         try:
             response = await self.llm.complete(prompt, temperature=0.3, max_tokens=400, response_format="json")
             parsed = json.loads(response)
-        except Exception:
+        except Exception as e:
+            logger.error("Fundamental LLM call failed for %s: %s", ticker, e)
             return FundamentalSignal(
                 signal='hold', confidence=10,
                 narrative="LLM unavailable for fundamental analysis.",
-                key_themes=[], risks=[], catalyst=None, articles_used=len(results['documents'][0])
+                key_themes=[], risks=[], catalyst=None, articles_used=len(articles)
             )
 
         bias = parsed.get('bias', 'neutral').lower()
@@ -141,5 +106,5 @@ Be honest. If unclear, return neutral with low confidence."""
             key_themes=parsed.get('key_themes', []),
             risks=parsed.get('risks', []),
             catalyst=parsed.get('catalyst'),
-            articles_used=len(results['documents'][0])
+            articles_used=len(articles)
         )
