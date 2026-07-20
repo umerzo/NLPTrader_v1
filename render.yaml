@@ -53,15 +53,4 @@ services:
           name: nlptrader-db
           property: database
 
-  - type: static
-    name: nlptrader-frontend
-    runtime: static
-    branch: main
-    buildCommand: cd frontend && npm install && npm run build
-    staticPublishPath: frontend/dist
-    envVars:
-      - key: VITE_API_URL
-        fromService:
-          type: web
-          name: nlptrader-api
-          property: host
+
