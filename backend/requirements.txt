@@ -23,8 +23,8 @@ chromadb==0.5.5
 # Data
 yfinance==0.2.40
 feedparser==6.0.11
-pandas==2.2.2
-numpy==1.26.4
+pandas>=2.2.0
+numpy>=1.26.0
 
 # LLM
 openai==1.30.3
