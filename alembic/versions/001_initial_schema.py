@@ -16,6 +16,7 @@ depends_on = None
 
 
 def upgrade():
+    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
     # tickers
     op.create_table(
         'tickers',
