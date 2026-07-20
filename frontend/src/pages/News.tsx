@@ -151,7 +151,7 @@ function ArticleCard({ article }: { article: NewsArticle }) {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-2">
                 <span className="px-2 py-0.5 rounded text-xs font-medium bg-[var(--bg-tertiary)] text-[var(--text-secondary)]">
-                  {article.ticker}
+                  {article.tickers?.[0]}
                 </span>
                 <span className="text-xs text-[var(--text-muted)]">
                   {article.source} · {formatDistanceToNow(new Date(article.published_at), { addSuffix: true })}

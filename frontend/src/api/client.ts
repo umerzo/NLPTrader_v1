@@ -176,7 +176,7 @@ export const backtestApi = {
 
 export interface NewsArticle {
   id: number
-  ticker: string
+  tickers: string[]
   source: string
   headline: string
   summary: string | null
@@ -266,9 +266,7 @@ export interface TAAnalysis {
 
 export const newsApi = {
   getArticles: (params: { ticker?: string; limit?: number; offset?: number } = {}) =>
-    api.get<PaginatedNews>(`${PREFIX}/news/articles`, { params }).then(r => r.data),
-  analyzeSentiment: (limit?: number) =>
-    api.post<{ analyzed: number; results: LLMAnalysisResult[] }>(`${PREFIX}/news/analyze-sentiment`, null, { params: { limit } }).then(r => r.data),
+    api.get<PaginatedNews>(`${PREFIX}/news/${params.ticker || ''}`, { params: { limit: params.limit, offset: params.offset } }).then(r => r.data),
 }
 
 export type TickerSearchResult =

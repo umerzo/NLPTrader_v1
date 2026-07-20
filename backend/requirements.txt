@@ -18,7 +18,6 @@ sentence-transformers>=3.0.1
 accelerate>=0.30.1
 
 # Vector DB
-chromadb>=0.5.5
 pgvector>=0.3.0
 
 # Data
@@ -26,13 +25,9 @@ yfinance>=0.2.40
 feedparser>=6.0.11
 pandas
 numpy
-
 # LLM
 openai>=1.30.3
 
-# Plotting (for TA charts)
-mplfinance>=0.12.9b5
-matplotlib
 
 # Testing
 pytest>=8.2.2
